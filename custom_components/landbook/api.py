@@ -158,7 +158,7 @@ def refresh_token(bearer_token: str) -> str:
         REFRESH_TOKEN_URL,
         data=b"",
         headers=headers,
-        method="POST",
+        method="PUT",
     )
     try:
         resp = json.loads(urllib.request.urlopen(req).read())

@@ -24,11 +24,14 @@ class LandbookMQTTClient:
         self._token_refresher = token_refresher  # optional callable that returns a fresh token
         self._client: mqtt.Client | None = None
         self._connected = False
+        self._shutting_down = False
         self._msg_counter = 1000
         self._reconnect_timer: threading.Timer | None = None
 
         # device_id -> list of callbacks
         self._listeners: dict[str, list[Callable[[str, Any], None]]] = {}
+        # called after (re)connect to refresh state
+        self._on_reconnect: Callable[[], None] | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -67,6 +70,7 @@ class LandbookMQTTClient:
         self._bearer_token = bearer_token
 
     def disconnect(self) -> None:
+        self._shutting_down = True
         if self._reconnect_timer:
             self._reconnect_timer.cancel()
             self._reconnect_timer = None
@@ -91,6 +95,26 @@ class LandbookMQTTClient:
                 self._subscribe_topics(device_id)
 
         self._listeners[device_id].append(callback)
+
+    def send_read(self, device_id: str, pk: str, dk: str, codes: list[str]) -> None:
+        """Request current values for the given property codes (READ-ATTR)."""
+        if not self._client or not self._connected:
+            return
+        self._msg_counter = (self._msg_counter + 1) & 0xFFFF
+        payload = json.dumps(
+            {
+                "msgId": self._msg_counter,
+                "productKey": pk,
+                "deviceKey": dk,
+                "type": "READ-ATTR",
+                "kv": json.dumps(codes),
+                "cacheTime": 0,
+                "isCache": False,
+                "isCover": False,
+            }
+        )
+        self._client.publish(f"q/1/d/{device_id}/sys_", payload, qos=1)
+        _LOGGER.debug("send_read device=%s codes=%s", device_id, codes)
 
     def send_write(self, device_id: str, pk: str, dk: str, props: dict) -> None:
         """Publish a WRITE-ATTR command."""
@@ -129,11 +153,16 @@ class LandbookMQTTClient:
             for device_id in self._listeners:
                 self._subscribe_topics(device_id)
             _LOGGER.info("Landbook MQTT connected")
+            if self._on_reconnect:
+                self._on_reconnect()
         else:
             _LOGGER.error("Landbook MQTT connect failed: %s", reason_code)
 
     def _on_disconnect(self, client, userdata, disconnect_flags, reason_code, properties):
         self._connected = False
+        if self._shutting_down:
+            _LOGGER.debug("Landbook MQTT disconnected cleanly (unload)")
+            return
         _LOGGER.warning("Landbook MQTT disconnected: %s — scheduling reconnect", reason_code)
         self._schedule_reconnect(delay=5)
 

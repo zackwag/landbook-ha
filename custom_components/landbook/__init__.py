@@ -79,10 +79,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     def _mqtt_callback(suffix: str, payload: Any) -> None:
-        entry_data = hass.data[DOMAIN][entry.entry_id]
+        entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+        if entry_data is None:
+            return
 
         if suffix == "bus_":
-            # kv is nested under data.kv in bus_ reports
+            # Covers both MATTR/REPORT and MATTR/READRESP — same data.kv shape
             data_block = payload.get("data", payload)
             kv = data_block.get("kv", {})
             if isinstance(kv, dict):
@@ -137,7 +139,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     mqtt_client.subscribe_device(device_id, _mqtt_callback)
 
-    # Seed initial state
+    # Request full current state via READ-ATTR on every (re)connect
+    all_codes = [p["code"] for p in properties]
+
+    def _request_full_state() -> None:
+        mqtt_client.send_read(device_id, pk, dk, all_codes)
+
+    mqtt_client._on_reconnect = _request_full_state
+    _request_full_state()
+
+    # Also seed initial state from REST API as a fallback
     try:
         attrs = await async_get_device_attributes(bearer_token, pk, dk)
         _LOGGER.debug("getDeviceBusinessAttributes raw response for %s: %s", dk, attrs)
