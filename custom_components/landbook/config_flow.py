@@ -16,6 +16,7 @@ from .const import (
     CONF_EMAIL,
     CONF_PASSWORD,
     CONF_PRODUCT_KEY,
+    CONF_PRODUCT_NAME,
     CONF_UID,
     DOMAIN,
 )
@@ -104,6 +105,7 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_DEVICE_KEY: device["deviceKey"],
                         CONF_PRODUCT_KEY: device["productKey"],
                         CONF_DEVICE_NAME: device["deviceName"],
+                        CONF_PRODUCT_NAME: device.get("productName", ""),
                     },
                 )
 

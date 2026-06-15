@@ -14,7 +14,7 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_DEVICE_NAME, DOMAIN
+from .const import CONF_DEVICE_NAME, CONF_PRODUCT_NAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,12 +57,14 @@ class LandbookTemperatureSensor(SensorEntity):
         self._attr_native_value: float | None = None
 
         device_name: str = entry.data[CONF_DEVICE_NAME]
+        product_name: str = entry.data.get(CONF_PRODUCT_NAME, "")
         self._attr_unique_id = f"{entry.entry_id}_{self._code}"
         self._attr_name = f"{device_name} Temperature"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=device_name,
             manufacturer="Landbook",
+            model=product_name or None,
         )
 
     @property

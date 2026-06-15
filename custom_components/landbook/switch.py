@@ -10,7 +10,7 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_DEVICE_NAME, DISPLAY_LIGHT_HINTS, DISPLAY_NAME_OVERRIDES, SWITCH_ICON_MAP, DOMAIN
+from .const import CONF_DEVICE_NAME, CONF_PRODUCT_NAME, DISPLAY_LIGHT_HINTS, DISPLAY_NAME_OVERRIDES, SWITCH_ICON_MAP, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,6 +59,7 @@ class LandbookSwitch(SwitchEntity):
         self._attr_is_on: bool = False
 
         device_name: str = entry.data[CONF_DEVICE_NAME]
+        product_name: str = entry.data.get(CONF_PRODUCT_NAME, "")
         tsl_name: str = prop.get("name", self._code)
         display_name = DISPLAY_NAME_OVERRIDES.get(tsl_name.lower(), tsl_name)
 
@@ -69,6 +70,7 @@ class LandbookSwitch(SwitchEntity):
             identifiers={(DOMAIN, entry.entry_id)},
             name=device_name,
             manufacturer="Landbook",
+            model=product_name or None,
         )
 
     @property

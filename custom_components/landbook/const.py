@@ -27,6 +27,7 @@ CONF_UID = "uid"
 CONF_DEVICE_KEY = "device_key"
 CONF_PRODUCT_KEY = "product_key"
 CONF_DEVICE_NAME = "device_name"
+CONF_PRODUCT_NAME = "product_name"
 
 # TSL property data types
 DTYPE_BOOL = "BOOL"

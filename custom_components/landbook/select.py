@@ -9,7 +9,7 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_DEVICE_NAME, DISPLAY_NAME_OVERRIDES, DOMAIN
+from .const import CONF_DEVICE_NAME, CONF_PRODUCT_NAME, DISPLAY_NAME_OVERRIDES, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ class LandbookSelect(SelectEntity):
         self._attr_current_option = self._attr_options[0] if self._attr_options else None
 
         device_name: str = entry.data[CONF_DEVICE_NAME]
+        product_name: str = entry.data.get(CONF_PRODUCT_NAME, "")
         tsl_name: str = prop.get("name", self._code)
         display_name = DISPLAY_NAME_OVERRIDES.get(tsl_name.lower(), tsl_name)
 
@@ -65,6 +66,7 @@ class LandbookSelect(SelectEntity):
             identifiers={(DOMAIN, entry.entry_id)},
             name=device_name,
             manufacturer="Landbook",
+            model=product_name or None,
         )
 
     @property
