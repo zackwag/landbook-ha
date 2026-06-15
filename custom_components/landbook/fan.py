@@ -149,7 +149,11 @@ class LandbookFan(FanEntity):
 
     def _mute(self) -> None:
         """Silence the beep if a sound property exists and muting is enabled."""
-        if self._sound_prop and self._entry.options.get(CONF_MUTE_ON_COMMAND, False):
+        mute_enabled = self._entry.options.get(
+            CONF_MUTE_ON_COMMAND,
+            self._entry.data.get(CONF_MUTE_ON_COMMAND, False),
+        )
+        if self._sound_prop and mute_enabled:
             self._send({self._sound_prop["code"]: False})
 
     async def async_turn_on(

@@ -26,7 +26,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class LandbookOptionsFlow(config_entries.OptionsFlow):
-    """Handle options for the Landbook integration."""
+    """Allow changing options after setup."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -34,15 +34,14 @@ class LandbookOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
+        current = self.config_entry.options.get(
+            CONF_MUTE_ON_COMMAND,
+            self.config_entry.data.get(CONF_MUTE_ON_COMMAND, False),
+        )
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_MUTE_ON_COMMAND,
-                        default=self.config_entry.options.get(CONF_MUTE_ON_COMMAND, False),
-                    ): bool,
-                }
+                {vol.Required(CONF_MUTE_ON_COMMAND, default=current): bool}
             ),
         )
 
@@ -133,6 +132,7 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_PRODUCT_KEY: device["productKey"],
                         CONF_DEVICE_NAME: device["deviceName"],
                         CONF_PRODUCT_NAME: device.get("productName", ""),
+                        CONF_MUTE_ON_COMMAND: user_input.get(CONF_MUTE_ON_COMMAND, False),
                     },
                 )
 
@@ -141,7 +141,10 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="pick_device",
             data_schema=vol.Schema(
-                {vol.Required("device"): vol.In(device_names)}
+                {
+                    vol.Required("device"): vol.In(device_names),
+                    vol.Required(CONF_MUTE_ON_COMMAND, default=False): bool,
+                }
             ),
             errors=errors,
         )

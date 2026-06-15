@@ -54,11 +54,11 @@ Credentials are stored in the HA config entry. The bearer token is refreshed on 
 
 ## Options
 
-After setup, click **Configure** on the integration card to access these options:
-
 | Option | Default | Description |
 |--------|---------|-------------|
 | Mute beep when turning on or changing speed | Off | Sends a silent command after each fan command to suppress the confirmation beep. Does not change the device's persistent sound setting — if you want the fan permanently silent, turn off the **Device Sound** switch instead. |
+
+This option is set during initial setup and can be changed afterwards by clicking **Configure** on the integration card.
 
 ## Notes
 

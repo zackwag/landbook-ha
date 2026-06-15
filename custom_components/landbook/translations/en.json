@@ -11,7 +11,8 @@
       "pick_device": {
         "title": "Select Device",
         "data": {
-          "device": "Device"
+          "device": "Device",
+          "mute_on_command": "Mute beep when turning on or changing speed"
         }
       }
     },
