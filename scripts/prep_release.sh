@@ -61,10 +61,8 @@ sed -i '' "s/^current_version = .*/current_version = ${NEW_VERSION}/" \
 echo "Updated manifest.json and .bumpversion.cfg to $NEW_VERSION"
 
 # --- Commit, tag, push ---
-git add custom_components/landbook/manifest.json .bumpversion.cfg
-
-# Include any other changes the user may have staged
-git add -u
+# Stage everything — tracked changes and new untracked files
+git add .
 
 git commit -m "$MESSAGE"
 git tag "$TAG"
