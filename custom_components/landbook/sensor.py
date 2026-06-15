@@ -87,15 +87,6 @@ class LandbookTemperatureSensor(SensorEntity):
 
     @callback
     def _handle_state_update(self, event: Event) -> None:
-        # Clear temperature when fan is off — no active readings expected
-        power_prop = self._data.get("power_prop")
-        if power_prop:
-            power_state = self._data["state"].get(power_prop["code"])
-            if power_state is not None and not bool(power_state):
-                self._attr_native_value = None
-                self.async_write_ha_state()
-                return
-
         raw = self._data["state"].get(self._code)
         if raw is not None:
             try:

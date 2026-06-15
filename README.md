@@ -54,7 +54,7 @@ Credentials are stored in the HA config entry. The bearer token is refreshed on 
 
 ## Notes
 
-- Temperature is reported by the device and refreshed on every HA restart or MQTT reconnect. There is no fixed polling interval — updates arrive when the device reports a state change.
+- Temperature is reported by the device whether it is on or off, and is refreshed on every HA restart or MQTT reconnect. There is no fixed polling interval — updates arrive when the device reports a state change.
 - The integration auto-detects the power switch and speed control from the device's TSL model. If detection is wrong, open an issue with your TSL dump.
 - Only one MQTT connection is created per account regardless of how many devices you add.
 
