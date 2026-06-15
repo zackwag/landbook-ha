@@ -23,5 +23,15 @@
     "abort": {
       "already_configured": "This device is already configured."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Landbook Options",
+        "data": {
+          "mute_on_command": "Mute beep when turning on or changing speed"
+        }
+      }
+    }
   }
 }

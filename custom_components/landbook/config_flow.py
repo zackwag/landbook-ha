@@ -14,6 +14,7 @@ from .const import (
     CONF_DEVICE_KEY,
     CONF_DEVICE_NAME,
     CONF_EMAIL,
+    CONF_MUTE_ON_COMMAND,
     CONF_PASSWORD,
     CONF_PRODUCT_KEY,
     CONF_PRODUCT_NAME,
@@ -24,10 +25,36 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+class LandbookOptionsFlow(config_entries.OptionsFlow):
+    """Handle options for the Landbook integration."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_MUTE_ON_COMMAND,
+                        default=self.config_entry.options.get(CONF_MUTE_ON_COMMAND, False),
+                    ): bool,
+                }
+            ),
+        )
+
+
 class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Landbook."""
 
     VERSION = 1
+
+    @staticmethod
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> LandbookOptionsFlow:
+        return LandbookOptionsFlow()
 
     def __init__(self) -> None:
         self._email: str = ""

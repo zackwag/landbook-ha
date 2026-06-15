@@ -11,7 +11,7 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_DEVICE_NAME, CONF_PRODUCT_NAME, DOMAIN
+from .const import CONF_DEVICE_NAME, CONF_MUTE_ON_COMMAND, CONF_PRODUCT_NAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,6 +53,15 @@ class LandbookFan(FanEntity):
         self._speed_values: list[int] = []
         if self._speed_prop:
             self._build_speed_map()
+
+        # Find the sound property so we can mute on turn-on / speed change
+        self._sound_prop = next(
+            (p for p in data.get("extra_props", [])
+             if p["dataType"] == "BOOL"
+             and any(h in p.get("code", "").lower() or h in p.get("name", "").lower()
+                     for h in ("sound", "beep", "buzzer"))),
+            None,
+        )
 
         self._is_on: bool = False
         self._oscillating: bool = False
@@ -138,6 +147,11 @@ class LandbookFan(FanEntity):
     # Commands
     # ------------------------------------------------------------------
 
+    def _mute(self) -> None:
+        """Silence the beep if a sound property exists and muting is enabled."""
+        if self._sound_prop and self._entry.options.get(CONF_MUTE_ON_COMMAND, False):
+            self._send({self._sound_prop["code"]: False})
+
     async def async_turn_on(
         self,
         percentage: int | None = None,
@@ -165,6 +179,7 @@ class LandbookFan(FanEntity):
 
         self._is_on = True
         self._send(props)
+        self._mute()
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
@@ -186,6 +201,8 @@ class LandbookFan(FanEntity):
         )
         self._current_speed_idx = idx
         self._send({self._speed_prop["code"]: self._speed_values[idx]})
+        if self._is_on:
+            self._mute()
         self.async_write_ha_state()
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
@@ -194,6 +211,8 @@ class LandbookFan(FanEntity):
         idx = self._preset_modes.index(preset_mode)
         self._current_speed_idx = idx
         self._send({self._speed_prop["code"]: self._speed_values[idx]})
+        if self._is_on:
+            self._mute()
         self.async_write_ha_state()
 
     async def async_oscillate(self, oscillating: bool) -> None:

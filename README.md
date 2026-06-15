@@ -52,6 +52,14 @@ Credentials are stored in the HA config entry. The bearer token is refreshed on 
 
 - **US region only** — the integration connects to the Landbook US servers (`iot-api.quectelus.com`, `iot-south.landecia.com`). Accounts on EU or CN servers are not currently supported.
 
+## Options
+
+After setup, click **Configure** on the integration card to access these options:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| Mute beep when turning on or changing speed | Off | Sends a silent command after each fan command to suppress the confirmation beep. Does not change the device's persistent sound setting — if you want the fan permanently silent, turn off the **Device Sound** switch instead. |
+
 ## Notes
 
 - Temperature is reported by the device whether it is on or off, and is refreshed on every HA restart or MQTT reconnect. There is no fixed polling interval — updates arrive when the device reports a state change.
