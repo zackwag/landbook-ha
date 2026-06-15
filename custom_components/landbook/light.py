@@ -88,6 +88,7 @@ class LandbookLight(LightEntity):
                 self._handle_state_update,
             )
         )
+        self._handle_state_update(None)
 
     @callback
     def _handle_state_update(self, event: Event) -> None:

@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .api import LandbookAPIError, async_get_device_attributes, async_get_tsl
+from .api import LandbookAPIError, LandbookAuthError, async_get_device_attributes, async_get_tsl, refresh_token
 from .const import (
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
@@ -53,7 +53,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         claimed.add(id(temperature_prop))
     extra_props = [p for p in properties if id(p) not in claimed]
 
-    mqtt_client = LandbookMQTTClient(uid, bearer_token)
+    def _token_refresher() -> str:
+        return refresh_token(bearer_token)
+
+    mqtt_client = LandbookMQTTClient(uid, bearer_token, token_refresher=_token_refresher)
     try:
         await hass.async_add_executor_job(mqtt_client.connect)
     except ConnectionError as exc:
@@ -83,12 +86,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             data_block = payload.get("data", payload)
             kv = data_block.get("kv", {})
             if isinstance(kv, dict):
-                # Cast numeric strings to appropriate types
-                for k, v in kv.items():
-                    try:
-                        kv[k] = int(v)
-                    except (ValueError, TypeError):
-                        pass
                 entry_data["state"].update(kv)
                 hass.async_create_task(
                     _async_update_entities(hass, entry.entry_id)
@@ -107,9 +104,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         elif suffix == "onl_":
             # Log the raw payload so we can confirm the shape
             _LOGGER.debug("onl_ raw payload for %s: %s", dk, payload)
-            # Common Quectel shapes: {"status":1}, {"online":true}, {"connectStatus":1}
+            # Quectel shape: {"type":"ONLINE","data":{"value":1}}
+            # value=1 means online, value=0 means offline
             status = (
-                payload.get("status")
+                payload.get("data", {}).get("value")
+                if isinstance(payload.get("data"), dict)
+                else payload.get("status")
                 or payload.get("online")
                 or payload.get("connectStatus")
             )
@@ -137,6 +137,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Seed initial state
     try:
         attrs = await async_get_device_attributes(bearer_token, pk, dk)
+        _LOGGER.debug("getDeviceBusinessAttributes raw response for %s: %s", dk, attrs)
         initial_state: dict = {}
         if isinstance(attrs, list):
             for item in attrs:
@@ -146,9 +147,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     initial_state[code] = val
         elif isinstance(attrs, dict):
             initial_state = attrs
+        _LOGGER.debug("Initial state seeded for %s: %s", dk, initial_state)
         hass.data[DOMAIN][entry.entry_id]["state"] = initial_state
-    except LandbookAPIError:
-        _LOGGER.warning("Could not fetch initial device attributes for %s", dk)
+    except LandbookAPIError as exc:
+        _LOGGER.warning("Could not fetch initial device attributes for %s: %s", dk, exc)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True

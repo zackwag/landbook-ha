@@ -90,14 +90,19 @@ class LandbookSelect(SelectEntity):
                 self._handle_state_update,
             )
         )
+        self._handle_state_update(None)
 
     @callback
     def _handle_state_update(self, event: Event) -> None:
         raw = self._data["state"].get(self._code)
         if raw is None:
             return
+        try:
+            raw_int = int(raw)
+        except (ValueError, TypeError):
+            raw_int = raw
         for label, val in self._options_map.items():
-            if val == raw:
+            if val == raw_int:
                 self._attr_current_option = label
                 self.async_write_ha_state()
                 return

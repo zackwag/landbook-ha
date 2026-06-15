@@ -212,6 +212,7 @@ class LandbookFan(FanEntity):
                 self._handle_state_update,
             )
         )
+        self._handle_state_update(None)
 
     @callback
     def _handle_state_update(self, event: Event) -> None:
@@ -224,8 +225,13 @@ class LandbookFan(FanEntity):
 
         if self._speed_prop:
             raw = shared.get(self._speed_prop["code"])
-            if raw is not None and raw in self._speed_values:
-                self._current_speed_idx = self._speed_values.index(raw)
+            if raw is not None:
+                try:
+                    val = int(raw)
+                    if val in self._speed_values:
+                        self._current_speed_idx = self._speed_values.index(val)
+                except (ValueError, TypeError):
+                    pass
 
         if self._oscillation_prop:
             raw = shared.get(self._oscillation_prop["code"])
