@@ -7,10 +7,12 @@ import hashlib
 import json
 import random
 import string
-import subprocess
 import urllib.parse
 import urllib.request
 from typing import Any
+
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad
 
 from .const import (
     APP_DOMAIN_KEY,
@@ -34,24 +36,15 @@ class LandbookAPIError(Exception):
 
 
 def _encrypt_password(password: str) -> tuple[str, str]:
-    """Return (pwd_b64, rand) — mirrors the openssl AES-128-CBC logic."""
+    """Return (pwd_b64, rand) — AES-128-CBC, matches the Landbook app logic."""
     rand = "".join(random.choices(string.ascii_letters + string.digits, k=16))
     md5_full = hashlib.md5(rand.encode()).hexdigest().upper()
     hash_random = md5_full[8:24]
     iv = hash_random[8:16] + hash_random[0:8]
 
-    result = subprocess.run(
-        [
-            "openssl", "enc", "-aes-128-cbc",
-            "-K", hash_random.encode().hex(),
-            "-iv", iv.encode().hex(),
-            "-nosalt",
-        ],
-        input=password.encode(),
-        capture_output=True,
-        check=True,
-    )
-    pwd = base64.b64encode(result.stdout).decode()
+    cipher = AES.new(hash_random.encode(), AES.MODE_CBC, iv.encode())
+    encrypted = cipher.encrypt(pad(password.encode(), AES.block_size))
+    pwd = base64.b64encode(encrypted).decode()
     return pwd, rand
 
 
@@ -69,10 +62,7 @@ def login(email: str, password: str) -> tuple[str, str]:
 
     Raises LandbookAuthError on bad credentials.
     """
-    try:
-        pwd, rand = _encrypt_password(password)
-    except subprocess.CalledProcessError as exc:
-        raise LandbookAuthError("Password encryption failed") from exc
+    pwd, rand = _encrypt_password(password)
 
     sig = hashlib.sha256(
         (email + pwd + rand + APP_DOMAIN_KEY).encode()
@@ -106,7 +96,6 @@ def login(email: str, password: str) -> tuple[str, str]:
 
     bearer_token: str = resp["data"]["accessToken"]["token"]
     rest_token = bearer_token.replace("Bearer ", "")
-    # JWT payload decode (no verification needed — we just need uid)
     payload_b64 = rest_token.split(".")[1]
     uid: str = json.loads(
         base64.b64decode(payload_b64 + "==")
@@ -158,24 +147,6 @@ def get_tsl(bearer_token: str, pk: str) -> list[dict]:
     return properties
 
 
-async def async_login(
-    email: str, password: str
-) -> tuple[str, str]:
-    """Async wrapper around blocking login()."""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, login, email, password)
-
-
-async def async_get_device_list(bearer_token: str) -> list[dict]:
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, get_device_list, bearer_token)
-
-
-async def async_get_tsl(bearer_token: str, pk: str) -> list[dict]:
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, get_tsl, bearer_token, pk)
-
-
 def refresh_token(bearer_token: str) -> str:
     """Exchange an expiring token for a new one. Returns the new bearer token."""
     headers = {
@@ -208,6 +179,21 @@ def get_device_attributes(bearer_token: str, pk: str, dk: str) -> dict:
         "/v2/binding/enduserapi/getDeviceBusinessAttributes",
         {"pk": pk, "dk": dk},
     )
+
+
+async def async_login(email: str, password: str) -> tuple[str, str]:
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, login, email, password)
+
+
+async def async_get_device_list(bearer_token: str) -> list[dict]:
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, get_device_list, bearer_token)
+
+
+async def async_get_tsl(bearer_token: str, pk: str) -> list[dict]:
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, get_tsl, bearer_token, pk)
 
 
 async def async_refresh_token(bearer_token: str) -> str:

@@ -46,7 +46,7 @@ Credentials are stored in the HA config entry. The bearer token is refreshed on 
 ## Requirements
 
 - `paho-mqtt >= 2.0.0` (installed automatically)
-- `openssl` available on the HA host (present in all standard HA OS / Container installs)
+- `pycryptodome >= 3.0.0` (installed automatically)
 
 ## Notes
 
