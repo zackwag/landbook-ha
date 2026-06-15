@@ -1,6 +1,7 @@
 """Fan entity for Landbook integration."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 from typing import Any
@@ -148,13 +149,33 @@ class LandbookFan(FanEntity):
     # ------------------------------------------------------------------
 
     def _mute(self) -> None:
-        """Silence the beep if a sound property exists and muting is enabled."""
+        """Silence the beep then restore sound to its previous state."""
         mute_enabled = self._entry.options.get(
             CONF_MUTE_ON_COMMAND,
             self._entry.data.get(CONF_MUTE_ON_COMMAND, False),
         )
-        if self._sound_prop and mute_enabled:
-            self._send({self._sound_prop["code"]: False})
+        if not self._sound_prop or not mute_enabled:
+            return
+        # Only mute if sound is currently on — avoids unnecessary commands
+        sound_on = bool(self._data["state"].get(self._sound_prop["code"], True))
+        if not sound_on:
+            return
+        self._send({self._sound_prop["code"]: False})
+        # Restore sound after a short delay so the beep is suppressed but state persists
+        self.hass.loop.call_soon_threadsafe(
+            self.hass.async_create_task,
+            self._async_restore_sound(),
+        )
+
+    async def _async_restore_sound(self) -> None:
+        await asyncio.sleep(1.5)
+        if self._sound_prop:
+            self._data["mqtt_client"].send_write(
+                self._data["device_id"],
+                self._data["pk"],
+                self._data["dk"],
+                {self._sound_prop["code"]: True},
+            )
 
     async def async_turn_on(
         self,
