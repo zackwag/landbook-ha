@@ -4,6 +4,7 @@
       "user": {
         "title": "Landbook — Sign In",
         "data": {
+          "region": "Region",
           "email": "Email",
           "password": "Password"
         }
@@ -11,7 +12,8 @@
       "pick_device": {
         "title": "Select Device",
         "data": {
-          "device": "Device"
+          "device": "Device",
+          "mute_on_command": "Mute beep when turning on or changing speed"
         }
       }
     },
@@ -22,6 +24,16 @@
     },
     "abort": {
       "already_configured": "This device is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Landbook Options",
+        "data": {
+          "mute_on_command": "Mute beep when turning on or changing speed"
+        }
+      }
     }
   }
 }

@@ -52,7 +52,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     power_prop        = _find_power_prop(properties)
     speed_prop        = _find_speed_prop(properties, power_prop)
     mode_prop         = _find_mode_prop(properties, power_prop, speed_prop)
-    oscillation_prop  = _find_oscillation_prop(properties, power_prop, speed_prop)
+    oscillation_prop  = _find_oscillation_prop(properties, power_prop, speed_prop, mode_prop)
 
     claimed = {id(p) for p in [power_prop, speed_prop, mode_prop, oscillation_prop] if p}
     light_props = _find_light_props(properties, claimed)
@@ -245,7 +245,7 @@ def _find_mode_prop(
         code_lower = p.get("code", "").lower()
         if p["dataType"] == "ENUM" and any(
             hint in name_lower or hint in code_lower
-            for hint in ("mode", "working", "speed") + SPEED_NAME_HINTS
+            for hint in ("mode", "working")
         ):
             return p
     return None
@@ -255,9 +255,10 @@ def _find_oscillation_prop(
     properties: list[dict],
     power_prop: dict | None,
     speed_prop: dict | None,
+    mode_prop: dict | None = None,
 ) -> dict | None:
     for p in properties:
-        if p is power_prop or p is speed_prop:
+        if p is power_prop or p is speed_prop or p is mode_prop:
             continue
         name_lower = p.get("name", "").lower()
         code_lower = p.get("code", "").lower()
