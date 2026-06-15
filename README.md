@@ -48,22 +48,29 @@ Credentials are stored in the HA config entry. The bearer token is refreshed on 
 - `paho-mqtt >= 2.0.0` (installed automatically)
 - `pycryptodome >= 3.0.0` (installed automatically)
 
+## Limitations
+
+- **US region only** — the integration connects to the Landbook US servers (`iot-api.quectelus.com`, `iot-south.landecia.com`). Accounts on EU or CN servers are not currently supported.
+
 ## Notes
 
 - Temperature is reported by the device on state change or firmware heartbeat — there is no fixed update interval and the integration does not poll for it. While the fan is off the temperature sensor will show as `unknown`.
-
-
 - The integration auto-detects the power switch and speed control from the device's TSL model. If detection is wrong, open an issue with your TSL dump.
 - Only one MQTT connection is created per account regardless of how many devices you add.
 
 ## Releasing a New Version
 
-Requires `bump2version` (`pip install bump2version`).
+Use the release script in `scripts/prep_release.sh`:
 
 ```bash
-# patch = 1.0.0 → 1.0.1 | minor = 1.0.0 → 1.1.0 | major = 1.0.0 → 2.0.0
-bump2version patch
-git push --tags
+./scripts/prep_release.sh "Your commit message here"
 ```
 
-This commits the version bump, creates a `vX.Y.Z` tag, and pushes it. The release workflow picks up the tag and publishes a GitHub Release automatically. HACS notifies users of the update once the release is live.
+The script will:
+1. Read the current version from `manifest.json`
+2. Ask whether this is a **patch**, **minor**, or **major** bump and show you the resulting version
+3. Ask for confirmation before doing anything
+4. Update the version in `manifest.json` and `.bumpversion.cfg`
+5. Commit all staged changes, tag the commit `vX.Y.Z`, and push to `origin/main`
+
+The GitHub Actions release workflow picks up the tag and publishes a GitHub Release automatically. HACS notifies users of the update once the release is live.

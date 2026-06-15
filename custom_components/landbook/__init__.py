@@ -87,14 +87,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             kv = data_block.get("kv", {})
             if isinstance(kv, dict):
                 entry_data["state"].update(kv)
-                hass.async_create_task(
-                    _async_update_entities(hass, entry.entry_id)
+                hass.loop.call_soon_threadsafe(
+                    hass.async_create_task,
+                    _async_update_entities(hass, entry.entry_id),
                 )
             elif isinstance(kv, list):
                 for item in kv:
                     entry_data["state"].update(item)
-                hass.async_create_task(
-                    _async_update_entities(hass, entry.entry_id)
+                hass.loop.call_soon_threadsafe(
+                    hass.async_create_task,
+                    _async_update_entities(hass, entry.entry_id),
                 )
 
         elif suffix == "ack_":
@@ -123,8 +125,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         dk,
                         "online" if online else "offline",
                     )
-                    hass.async_create_task(
-                        _async_update_entities(hass, entry.entry_id)
+                    hass.loop.call_soon_threadsafe(
+                        hass.async_create_task,
+                        _async_update_entities(hass, entry.entry_id),
                     )
             else:
                 _LOGGER.warning(
