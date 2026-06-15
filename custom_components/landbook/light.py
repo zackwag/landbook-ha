@@ -96,6 +96,9 @@ class LandbookLight(LightEntity):
 
     @callback
     def _handle_state_update(self, event: Event) -> None:
+        changed: set[str] = event.data.get("changed_keys", set()) if event else set()
+        if changed and self._code not in changed:
+            return
         raw = self._data["state"].get(self._code)
         if raw is not None:
             self._attr_is_on = bool(raw)

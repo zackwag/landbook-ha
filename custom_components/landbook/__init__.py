@@ -87,18 +87,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Covers both MATTR/REPORT and MATTR/READRESP — same data.kv shape
             data_block = payload.get("data", payload)
             kv = data_block.get("kv", {})
+            changed_keys: set[str] = set()
             if isinstance(kv, dict):
                 entry_data["state"].update(kv)
-                hass.loop.call_soon_threadsafe(
-                    hass.async_create_task,
-                    _async_update_entities(hass, entry.entry_id),
-                )
+                changed_keys = set(kv.keys())
             elif isinstance(kv, list):
                 for item in kv:
                     entry_data["state"].update(item)
+                    changed_keys.update(item.keys())
+            if changed_keys:
                 hass.loop.call_soon_threadsafe(
                     hass.async_create_task,
-                    _async_update_entities(hass, entry.entry_id),
+                    _async_update_entities(hass, entry.entry_id, changed_keys),
                 )
 
         elif suffix == "ack_":
@@ -129,7 +129,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     )
                     hass.loop.call_soon_threadsafe(
                         hass.async_create_task,
-                        _async_update_entities(hass, entry.entry_id),
+                        _async_update_entities(hass, entry.entry_id, set()),
                     )
             else:
                 _LOGGER.warning(
@@ -180,8 +180,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 
-async def _async_update_entities(hass: HomeAssistant, entry_id: str) -> None:
-    hass.bus.async_fire(f"{DOMAIN}_state_update_{entry_id}")
+async def _async_update_entities(hass: HomeAssistant, entry_id: str, changed_keys: set[str] | None = None) -> None:
+    hass.bus.async_fire(f"{DOMAIN}_state_update_{entry_id}", {"changed_keys": changed_keys or set()})
 
 
 # ---------------------------------------------------------------------------

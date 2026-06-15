@@ -241,29 +241,41 @@ class LandbookFan(FanEntity):
 
     @callback
     def _handle_state_update(self, event: Event) -> None:
+        changed: set[str] = event.data.get("changed_keys", set()) if event else set()
         shared: dict = self._data["state"]
+        updated = False
 
         if self._power_prop:
-            raw = shared.get(self._power_prop["code"])
-            if raw is not None:
-                self._is_on = bool(raw)
+            code = self._power_prop["code"]
+            if not changed or code in changed:
+                raw = shared.get(code)
+                if raw is not None:
+                    self._is_on = bool(raw)
+                    updated = True
 
         if self._speed_prop:
-            raw = shared.get(self._speed_prop["code"])
-            if raw is not None:
-                try:
-                    val = int(raw)
-                    if val in self._speed_values:
-                        self._current_speed_idx = self._speed_values.index(val)
-                except (ValueError, TypeError):
-                    pass
+            code = self._speed_prop["code"]
+            if not changed or code in changed:
+                raw = shared.get(code)
+                if raw is not None:
+                    try:
+                        val = int(raw)
+                        if val in self._speed_values:
+                            self._current_speed_idx = self._speed_values.index(val)
+                            updated = True
+                    except (ValueError, TypeError):
+                        pass
 
         if self._oscillation_prop:
-            raw = shared.get(self._oscillation_prop["code"])
-            if raw is not None:
-                self._oscillating = bool(raw)
+            code = self._oscillation_prop["code"]
+            if not changed or code in changed:
+                raw = shared.get(code)
+                if raw is not None:
+                    self._oscillating = bool(raw)
+                    updated = True
 
-        self.async_write_ha_state()
+        if updated or not changed:
+            self.async_write_ha_state()
 
     # ------------------------------------------------------------------
     # Internal

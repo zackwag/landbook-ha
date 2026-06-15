@@ -90,6 +90,9 @@ class LandbookNumber(NumberEntity):
 
     @callback
     def _handle_state_update(self, event: Event) -> None:
+        changed: set[str] = event.data.get("changed_keys", set()) if event else set()
+        if changed and self._code not in changed:
+            return
         raw = self._data["state"].get(self._code)
         if raw is not None:
             self._attr_native_value = float(raw)
