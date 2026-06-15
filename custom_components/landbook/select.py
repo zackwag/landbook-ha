@@ -1,4 +1,4 @@
-"""Select entities for ENUM/BOOL-typed Landbook extra properties."""
+"""Select entities for ENUM-typed Landbook extra properties."""
 from __future__ import annotations
 
 import logging
@@ -23,7 +23,7 @@ async def async_setup_entry(
     entities = [
         LandbookSelect(hass, entry, data, prop)
         for prop in data["extra_props"]
-        if prop["dataType"] in ("ENUM", "BOOL")
+        if prop["dataType"] == "ENUM"
     ]
     if entities:
         async_add_entities(entities, update_before_add=False)
@@ -71,6 +71,10 @@ class LandbookSelect(SelectEntity):
             name=device_name,
             manufacturer="Landbook",
         )
+
+    @property
+    def available(self) -> bool:
+        return self._data.get("online", True)
 
     async def async_select_option(self, option: str) -> None:
         if option not in self._options_map:

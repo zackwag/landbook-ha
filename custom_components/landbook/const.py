@@ -46,3 +46,12 @@ POWER_SORT_ORDER = 0
 
 # Speed property detection: look for an INT or ENUM property with these name hints
 SPEED_NAME_HINTS = ("speed", "wind", "gear", "level")
+
+# Oscillation property detection
+OSCILLATION_NAME_HINTS = ("oscillat", "swing", "rotate")
+
+# Display name overrides: TSL property name -> HA entity name
+# Keys are case-insensitive matches against p["name"].lower()
+DISPLAY_NAME_OVERRIDES = {
+    "light": "Device Display",
+}

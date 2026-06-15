@@ -15,6 +15,7 @@ from .const import (
     CONF_PRODUCT_KEY,
     CONF_UID,
     DOMAIN,
+    OSCILLATION_NAME_HINTS,
     POWER_SORT_ORDER,
     SPEED_NAME_HINTS,
 )
@@ -22,7 +23,7 @@ from .mqtt_client import LandbookMQTTClient
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["fan", "number", "select"]
+PLATFORMS = ["fan", "number", "select", "switch"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -33,25 +34,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     dk: str = entry.data[CONF_DEVICE_KEY]
     device_id = f"qd{pk}{dk}"
 
-    # Fetch TSL (writable properties)
     try:
         properties = await async_get_tsl(bearer_token, pk)
     except LandbookAPIError as exc:
         raise ConfigEntryNotReady(f"Could not fetch TSL model: {exc}") from exc
 
-    # Identify power switch
-    power_prop = _find_power_prop(properties)
+    power_prop        = _find_power_prop(properties)
+    speed_prop        = _find_speed_prop(properties, power_prop)
+    oscillation_prop  = _find_oscillation_prop(properties, power_prop, speed_prop)
 
-    # Identify speed property (used by FanEntity for percentage/preset)
-    speed_prop = _find_speed_prop(properties, power_prop)
+    claimed = {id(p) for p in [power_prop, speed_prop, oscillation_prop] if p}
+    extra_props = [p for p in properties if id(p) not in claimed]
 
-    # All other writable props become number/select helpers
-    extra_props = [
-        p for p in properties
-        if p is not power_prop and p is not speed_prop
-    ]
-
-    # Build MQTT client
     mqtt_client = LandbookMQTTClient(uid, bearer_token)
     try:
         await hass.async_add_executor_job(mqtt_client.connect)
@@ -66,29 +60,46 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "bearer_token": bearer_token,
         "power_prop": power_prop,
         "speed_prop": speed_prop,
+        "oscillation_prop": oscillation_prop,
         "extra_props": extra_props,
-        # Shared state dict — entities write optimistic state here,
-        # MQTT ack callbacks update it authoritatively.
         "state": {},
+        "online": True,  # optimistic until we get an onl_ message
     }
 
-    # Wire MQTT messages into shared state
     def _mqtt_callback(suffix: str, payload: Any) -> None:
+        entry_data = hass.data[DOMAIN][entry.entry_id]
+
         if suffix in ("ack_", "bus_"):
             kv = payload.get("kv")
             if isinstance(kv, list):
                 for item in kv:
-                    hass.data[DOMAIN][entry.entry_id]["state"].update(item)
+                    entry_data["state"].update(item)
                 hass.async_create_task(
                     _async_update_entities(hass, entry.entry_id)
                 )
 
+        elif suffix == "onl_":
+            # Payload: {"status": 1} = online, {"status": 0} = offline
+            # Some firmware uses "online": true/false instead
+            status = payload.get("status", payload.get("online"))
+            if status is not None:
+                online = bool(status)
+                if entry_data["online"] != online:
+                    entry_data["online"] = online
+                    _LOGGER.info(
+                        "Landbook device %s went %s",
+                        dk,
+                        "online" if online else "offline",
+                    )
+                    hass.async_create_task(
+                        _async_update_entities(hass, entry.entry_id)
+                    )
+
     mqtt_client.subscribe_device(device_id, _mqtt_callback)
 
-    # Seed initial state so entities have values before first MQTT push
+    # Seed initial state
     try:
         attrs = await async_get_device_attributes(bearer_token, pk, dk)
-        # attrs is a list of {code, value} dicts
         initial_state: dict = {}
         if isinstance(attrs, list):
             for item in attrs:
@@ -107,7 +118,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         data = hass.data[DOMAIN].pop(entry.entry_id, {})
@@ -118,7 +128,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_entities(hass: HomeAssistant, entry_id: str) -> None:
-    """Signal all entities for this entry to refresh from shared state."""
     hass.bus.async_fire(f"{DOMAIN}_state_update_{entry_id}")
 
 
@@ -127,7 +136,6 @@ async def _async_update_entities(hass: HomeAssistant, entry_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 def _find_power_prop(properties: list[dict]) -> dict | None:
-    """Find the main on/off BOOL property (sort=0 with on/open/enable spec)."""
     for p in properties:
         if (
             p["dataType"] == "BOOL"
@@ -139,14 +147,12 @@ def _find_power_prop(properties: list[dict]) -> dict | None:
             )
         ):
             return p
-    # Fallback: first BOOL property
     return next((p for p in properties if p["dataType"] == "BOOL"), None)
 
 
 def _find_speed_prop(
     properties: list[dict], power_prop: dict | None
 ) -> dict | None:
-    """Find an INT or ENUM property that looks like a speed/level control."""
     for p in properties:
         if p is power_prop:
             continue
@@ -155,6 +161,24 @@ def _find_speed_prop(
         if p["dataType"] in ("INT", "ENUM") and any(
             hint in name_lower or hint in code_lower
             for hint in SPEED_NAME_HINTS
+        ):
+            return p
+    return None
+
+
+def _find_oscillation_prop(
+    properties: list[dict],
+    power_prop: dict | None,
+    speed_prop: dict | None,
+) -> dict | None:
+    for p in properties:
+        if p is power_prop or p is speed_prop:
+            continue
+        name_lower = p.get("name", "").lower()
+        code_lower = p.get("code", "").lower()
+        if p["dataType"] == "BOOL" and any(
+            hint in name_lower or hint in code_lower
+            for hint in OSCILLATION_NAME_HINTS
         ):
             return p
     return None

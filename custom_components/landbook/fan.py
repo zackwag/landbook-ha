@@ -26,7 +26,7 @@ async def async_setup_entry(
 
 
 class LandbookFan(FanEntity):
-    """Represents the fan device."""
+    """Represents the Landbook fan device."""
 
     _attr_should_poll = False
 
@@ -36,6 +36,7 @@ class LandbookFan(FanEntity):
         self._data = data
         self._power_prop = data["power_prop"]
         self._speed_prop = data["speed_prop"]
+        self._oscillation_prop = data.get("oscillation_prop")
 
         device_name: str = entry.data[CONF_DEVICE_NAME]
         self._attr_unique_id = f"{entry.entry_id}_fan"
@@ -46,13 +47,13 @@ class LandbookFan(FanEntity):
             manufacturer="Landbook",
         )
 
-        # Build speed preset list from ENUM specs or INT range
         self._preset_modes: list[str] = []
         self._speed_values: list[int] = []
         if self._speed_prop:
             self._build_speed_map()
 
         self._is_on: bool = False
+        self._oscillating: bool = False
         self._current_speed_idx: int = 0
 
     # ------------------------------------------------------------------
@@ -81,17 +82,29 @@ class LandbookFan(FanEntity):
 
     @property
     def supported_features(self) -> FanEntityFeature:
-        features = FanEntityFeature(0)
+        features = FanEntityFeature.TURN_ON | FanEntityFeature.TURN_OFF
         if self._speed_prop:
             if self._speed_prop["dataType"] == "ENUM":
                 features |= FanEntityFeature.PRESET_MODE
             else:
                 features |= FanEntityFeature.SET_SPEED
+        if self._oscillation_prop:
+            features |= FanEntityFeature.OSCILLATE
         return features
 
     @property
     def is_on(self) -> bool:
         return self._is_on
+
+    @property
+    def available(self) -> bool:
+        return self._data.get("online", True)
+
+    @property
+    def oscillating(self) -> bool | None:
+        if not self._oscillation_prop:
+            return None
+        return self._oscillating
 
     @property
     def percentage(self) -> int | None:
@@ -181,6 +194,13 @@ class LandbookFan(FanEntity):
         self._send({self._speed_prop["code"]: self._speed_values[idx]})
         self.async_write_ha_state()
 
+    async def async_oscillate(self, oscillating: bool) -> None:
+        if not self._oscillation_prop:
+            return
+        self._oscillating = oscillating
+        self._send({self._oscillation_prop["code"]: oscillating})
+        self.async_write_ha_state()
+
     # ------------------------------------------------------------------
     # State updates from MQTT
     # ------------------------------------------------------------------
@@ -206,6 +226,11 @@ class LandbookFan(FanEntity):
             raw = shared.get(self._speed_prop["code"])
             if raw is not None and raw in self._speed_values:
                 self._current_speed_idx = self._speed_values.index(raw)
+
+        if self._oscillation_prop:
+            raw = shared.get(self._oscillation_prop["code"])
+            if raw is not None:
+                self._oscillating = bool(raw)
 
         self.async_write_ha_state()
 
