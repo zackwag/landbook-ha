@@ -51,9 +51,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     power_prop        = _find_power_prop(properties)
     speed_prop        = _find_speed_prop(properties, power_prop)
+    mode_prop         = _find_mode_prop(properties, power_prop, speed_prop)
     oscillation_prop  = _find_oscillation_prop(properties, power_prop, speed_prop)
 
-    claimed = {id(p) for p in [power_prop, speed_prop, oscillation_prop] if p}
+    claimed = {id(p) for p in [power_prop, speed_prop, mode_prop, oscillation_prop] if p}
     light_props = _find_light_props(properties, claimed)
     claimed |= {id(p) for p in light_props}
     temperature_prop = _find_temperature_prop(properties, claimed)
@@ -82,6 +83,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "bearer_token": bearer_token,
         "power_prop": power_prop,
         "speed_prop": speed_prop,
+        "mode_prop": mode_prop,
         "oscillation_prop": oscillation_prop,
         "extra_props": extra_props,
         "light_props": light_props,
@@ -218,14 +220,32 @@ def _find_power_prop(properties: list[dict]) -> dict | None:
 def _find_speed_prop(
     properties: list[dict], power_prop: dict | None
 ) -> dict | None:
+    """Find the INT speed property (used for percentage control)."""
     for p in properties:
         if p is power_prop:
             continue
         name_lower = p.get("name", "").lower()
         code_lower = p.get("code", "").lower()
-        if p["dataType"] in ("INT", "ENUM") and any(
+        if p["dataType"] == "INT" and any(
             hint in name_lower or hint in code_lower
             for hint in SPEED_NAME_HINTS
+        ):
+            return p
+    return None
+
+
+def _find_mode_prop(
+    properties: list[dict], power_prop: dict | None, speed_prop: dict | None
+) -> dict | None:
+    """Find the ENUM mode property (used for preset modes)."""
+    for p in properties:
+        if p is power_prop or p is speed_prop:
+            continue
+        name_lower = p.get("name", "").lower()
+        code_lower = p.get("code", "").lower()
+        if p["dataType"] == "ENUM" and any(
+            hint in name_lower or hint in code_lower
+            for hint in ("mode", "working", "speed") + SPEED_NAME_HINTS
         ):
             return p
     return None

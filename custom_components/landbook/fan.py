@@ -36,7 +36,8 @@ class LandbookFan(FanEntity):
         self._entry = entry
         self._data = data
         self._power_prop = data["power_prop"]
-        self._speed_prop = data["speed_prop"]
+        self._speed_prop = data["speed_prop"]       # INT → percentage
+        self._mode_prop = data.get("mode_prop")     # ENUM → preset modes
         self._oscillation_prop = data.get("oscillation_prop")
 
         device_name: str = entry.data[CONF_DEVICE_NAME]
@@ -50,10 +51,22 @@ class LandbookFan(FanEntity):
             model=product_name or None,
         )
 
+        # Preset modes from ENUM mode prop
         self._preset_modes: list[str] = []
+        self._mode_values: list[int] = []
+        if self._mode_prop:
+            for spec in (self._mode_prop.get("specs") or []):
+                self._preset_modes.append(spec["name"])
+                self._mode_values.append(int(spec["value"]))
+
+        # Speed steps from INT speed prop
         self._speed_values: list[int] = []
         if self._speed_prop:
-            self._build_speed_map()
+            specs = self._speed_prop.get("specs", {})
+            lo = int(specs.get("min", 1))
+            hi = int(specs.get("max", lo))
+            step = int(specs.get("step", 1)) or 1
+            self._speed_values = list(range(lo, hi + 1, step))
 
         # Find the sound property so we can mute on turn-on / speed change
         self._sound_prop = next(
@@ -67,26 +80,7 @@ class LandbookFan(FanEntity):
         self._is_on: bool = False
         self._oscillating: bool = False
         self._current_speed_idx: int = 0
-
-    # ------------------------------------------------------------------
-    # Speed map
-    # ------------------------------------------------------------------
-
-    def _build_speed_map(self) -> None:
-        prop = self._speed_prop
-        dtype = prop["dataType"]
-        specs = prop.get("specs", {})
-        if dtype == "ENUM":
-            for spec in specs:
-                self._preset_modes.append(spec["name"])
-                self._speed_values.append(int(spec["value"]))
-        elif dtype == "INT":
-            lo = int(specs.get("min", 0))
-            hi = int(specs.get("max", lo))
-            step = int(specs.get("step", 1)) or 1
-            for v in range(lo, hi + 1, step):
-                self._preset_modes.append(str(v))
-                self._speed_values.append(v)
+        self._current_mode_idx: int = 0
 
     # ------------------------------------------------------------------
     # HA Fan API
@@ -95,11 +89,10 @@ class LandbookFan(FanEntity):
     @property
     def supported_features(self) -> FanEntityFeature:
         features = FanEntityFeature.TURN_ON | FanEntityFeature.TURN_OFF
-        if self._speed_prop:
-            if self._speed_prop["dataType"] == "ENUM":
-                features |= FanEntityFeature.PRESET_MODE
-            else:
-                features |= FanEntityFeature.SET_SPEED
+        if self._speed_values:
+            features |= FanEntityFeature.SET_SPEED
+        if self._preset_modes:
+            features |= FanEntityFeature.PRESET_MODE
         if self._oscillation_prop:
             features |= FanEntityFeature.OSCILLATE
         return features
@@ -124,9 +117,7 @@ class LandbookFan(FanEntity):
             return None
         if self._current_speed_idx >= len(self._speed_values):
             return None
-        return round(
-            (self._current_speed_idx + 1) / len(self._speed_values) * 100
-        )
+        return round((self._current_speed_idx + 1) / len(self._speed_values) * 100)
 
     @property
     def speed_count(self) -> int:
@@ -140,8 +131,8 @@ class LandbookFan(FanEntity):
     def preset_mode(self) -> str | None:
         if not self._preset_modes:
             return None
-        if self._current_speed_idx < len(self._preset_modes):
-            return self._preset_modes[self._current_speed_idx]
+        if self._current_mode_idx < len(self._preset_modes):
+            return self._preset_modes[self._current_mode_idx]
         return None
 
     # ------------------------------------------------------------------
@@ -189,9 +180,9 @@ class LandbookFan(FanEntity):
 
         if preset_mode and preset_mode in self._preset_modes:
             idx = self._preset_modes.index(preset_mode)
-            props[self._speed_prop["code"]] = self._speed_values[idx]
-            self._current_speed_idx = idx
-        elif percentage is not None and self._speed_values:
+            props[self._mode_prop["code"]] = self._mode_values[idx]
+            self._current_mode_idx = idx
+        if percentage is not None and self._speed_values:
             idx = max(
                 0,
                 min(
@@ -226,18 +217,16 @@ class LandbookFan(FanEntity):
         )
         self._current_speed_idx = idx
         self._send({self._speed_prop["code"]: self._speed_values[idx]})
-        if self._is_on:
-            self._mute()
+        self._mute()
         self.async_write_ha_state()
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
-        if preset_mode not in self._preset_modes:
+        if not self._mode_prop or preset_mode not in self._preset_modes:
             return
         idx = self._preset_modes.index(preset_mode)
-        self._current_speed_idx = idx
-        self._send({self._speed_prop["code"]: self._speed_values[idx]})
-        if self._is_on:
-            self._mute()
+        self._current_mode_idx = idx
+        self._send({self._mode_prop["code"]: self._mode_values[idx]})
+        self._mute()
         self.async_write_ha_state()
 
     async def async_oscillate(self, oscillating: bool) -> None:
@@ -283,6 +272,19 @@ class LandbookFan(FanEntity):
                         val = int(raw)
                         if val in self._speed_values:
                             self._current_speed_idx = self._speed_values.index(val)
+                            updated = True
+                    except (ValueError, TypeError):
+                        pass
+
+        if self._mode_prop:
+            code = self._mode_prop["code"]
+            if not changed or code in changed:
+                raw = shared.get(code)
+                if raw is not None:
+                    try:
+                        val = int(raw)
+                        if val in self._mode_values:
+                            self._current_mode_idx = self._mode_values.index(val)
                             updated = True
                     except (ValueError, TypeError):
                         pass
