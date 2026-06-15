@@ -45,11 +45,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     speed_prop        = _find_speed_prop(properties, power_prop)
     oscillation_prop  = _find_oscillation_prop(properties, power_prop, speed_prop)
 
+    claimed = {id(p) for p in [power_prop, speed_prop, oscillation_prop] if p}
+    light_props = _find_light_props(properties, claimed)
+    claimed |= {id(p) for p in light_props}
     temperature_prop = _find_temperature_prop(properties, claimed)
-    if temperature_prop:
+    if temperature_prop and not temperature_prop.get("synthetic"):
         claimed.add(id(temperature_prop))
-    light_props = _find_light_props(properties, {id(p) for p in [power_prop, speed_prop, oscillation_prop] if p})
-    claimed = {id(p) for p in [power_prop, speed_prop, oscillation_prop] if p} | {id(p) for p in light_props}
     extra_props = [p for p in properties if id(p) not in claimed]
 
     mqtt_client = LandbookMQTTClient(uid, bearer_token)
