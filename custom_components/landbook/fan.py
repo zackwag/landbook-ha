@@ -49,6 +49,7 @@ class LandbookFan(FanEntity):
             name=device_name,
             manufacturer="Landbook",
             model=product_name or None,
+            suggested_area=_suggest_area(device_name, product_name),
         )
 
         # Preset modes from ENUM mode prop
@@ -311,3 +312,18 @@ class LandbookFan(FanEntity):
             self._data["dk"],
             props,
         )
+
+
+def _suggest_area(device_name: str, product_name: str) -> str | None:
+    """Derive a suggested area from the device name by removing the product name suffix."""
+    if not product_name:
+        return None
+    # e.g. "Living Room Fan" with product "OmniBreeze Tower Fan" → strip last word "Fan"
+    # More reliably: strip any trailing words that appear in the product name
+    product_words = {w.lower() for w in product_name.split()}
+    parts = device_name.split()
+    # Drop trailing words that match product name words
+    while parts and parts[-1].lower() in product_words:
+        parts.pop()
+    area = " ".join(parts).strip()
+    return area or None
