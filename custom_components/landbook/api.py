@@ -15,15 +15,11 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
 from .const import (
-    APP_DOMAIN_KEY,
     APP_ID,
     APP_SYSTEM_TYPE,
     APP_VERSION,
-    API_BASE_URL,
-    LOGIN_URL,
-    PRODUCT_ATTRIBUTES_URL,
-    REFRESH_TOKEN_URL,
-    USER_DOMAIN,
+    DEFAULT_REGION,
+    REGIONS,
 )
 
 
@@ -33,6 +29,10 @@ class LandbookAuthError(Exception):
 
 class LandbookAPIError(Exception):
     """Raised when an API call fails."""
+
+
+def _region_cfg(region: str) -> dict:
+    return REGIONS.get(region, REGIONS[DEFAULT_REGION])
 
 
 def _encrypt_password(password: str) -> tuple[str, str]:
@@ -57,15 +57,13 @@ def _default_headers() -> dict[str, str]:
     }
 
 
-def login(email: str, password: str) -> tuple[str, str]:
-    """Authenticate and return (bearer_token, uid).
-
-    Raises LandbookAuthError on bad credentials.
-    """
+def login(email: str, password: str, region: str = DEFAULT_REGION) -> tuple[str, str]:
+    """Authenticate and return (bearer_token, uid)."""
+    cfg = _region_cfg(region)
     pwd, rand = _encrypt_password(password)
 
     sig = hashlib.sha256(
-        (email + pwd + rand + APP_DOMAIN_KEY).encode()
+        (email + pwd + rand + cfg["app_domain_key"]).encode()
     ).hexdigest()
 
     data = urllib.parse.urlencode(
@@ -73,16 +71,14 @@ def login(email: str, password: str) -> tuple[str, str]:
             "email": email,
             "pwd": pwd,
             "random": rand,
-            "userDomain": USER_DOMAIN,
+            "userDomain": cfg["user_domain"],
             "signature": sig,
         }
     ).encode()
 
-    headers = {
-        **_default_headers(),
-        "Content-Type": "application/x-www-form-urlencoded",
-    }
-    req = urllib.request.Request(LOGIN_URL, data=data, headers=headers)
+    login_url = cfg["api_base"] + "/v2/enduser/enduserapi/emailPwdLogin"
+    headers = {**_default_headers(), "Content-Type": "application/x-www-form-urlencoded"}
+    req = urllib.request.Request(login_url, data=data, headers=headers)
 
     try:
         resp = json.loads(urllib.request.urlopen(req).read())
@@ -90,22 +86,18 @@ def login(email: str, password: str) -> tuple[str, str]:
         raise LandbookAuthError(f"Login request failed: {exc}") from exc
 
     if resp.get("code") != 200 or "data" not in resp:
-        raise LandbookAuthError(
-            f"Login failed: {resp.get('msg', 'unknown error')}"
-        )
+        raise LandbookAuthError(f"Login failed: {resp.get('msg', 'unknown error')}")
 
     bearer_token: str = resp["data"]["accessToken"]["token"]
     rest_token = bearer_token.replace("Bearer ", "")
     payload_b64 = rest_token.split(".")[1]
-    uid: str = json.loads(
-        base64.b64decode(payload_b64 + "==")
-    )["uid"]
+    uid: str = json.loads(base64.b64decode(payload_b64 + "=="))["uid"]
 
     return bearer_token, uid
 
 
-def _api_get(bearer_token: str, path: str, params: dict | None = None) -> Any:
-    url = API_BASE_URL + path
+def _api_get(bearer_token: str, api_base: str, path: str, params: dict | None = None) -> Any:
+    url = api_base + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
     headers = {**_default_headers(), "Authorization": bearer_token}
@@ -115,47 +107,36 @@ def _api_get(bearer_token: str, path: str, params: dict | None = None) -> Any:
     except Exception as exc:
         raise LandbookAPIError(f"API call to {path} failed: {exc}") from exc
     if resp.get("code") != 200:
-        raise LandbookAPIError(
-            f"API error on {path}: {resp.get('msg', 'unknown')}"
-        )
+        raise LandbookAPIError(f"API error on {path}: {resp.get('msg', 'unknown')}")
     return resp["data"]
 
 
-def get_device_list(bearer_token: str) -> list[dict]:
-    """Return the raw device list from the API."""
-    data = _api_get(
-        bearer_token,
-        "/v2/binding/enduserapi/userDeviceList",
-        {"page": 1, "pageSize": 50},
-    )
+def get_device_list(bearer_token: str, region: str = DEFAULT_REGION) -> list[dict]:
+    api_base = _region_cfg(region)["api_base"]
+    data = _api_get(bearer_token, api_base, "/v2/binding/enduserapi/userDeviceList", {"page": 1, "pageSize": 50})
     return data.get("list", [])
 
 
-def get_tsl(bearer_token: str, pk: str) -> list[dict]:
-    """Return writable properties from the TSL model, sorted by sort order."""
-    data = _api_get(
-        bearer_token,
-        "/v2/binding/enduserapi/productTSL",
-        {"pk": pk},
-    )
+def get_tsl(bearer_token: str, pk: str, region: str = DEFAULT_REGION) -> list[dict]:
+    api_base = _region_cfg(region)["api_base"]
+    data = _api_get(bearer_token, api_base, "/v2/binding/enduserapi/productTSL", {"pk": pk})
     properties = [
-        p
-        for p in data.get("properties", [])
+        p for p in data.get("properties", [])
         if "W" in p.get("subType", "") and p["type"] == "PROPERTY"
     ]
     properties.sort(key=lambda p: p.get("sort", 0))
     return properties
 
 
-def refresh_token(bearer_token: str) -> str:
-    """Exchange an expiring token for a new one. Returns the new bearer token."""
+def refresh_token(bearer_token: str, region: str = DEFAULT_REGION) -> str:
+    api_base = _region_cfg(region)["api_base"]
     headers = {
         **_default_headers(),
         "Authorization": bearer_token,
         "Content-Type": "application/x-www-form-urlencoded",
     }
     req = urllib.request.Request(
-        REFRESH_TOKEN_URL,
+        api_base + "/v2/enduser/enduserapi/refreshToken",
         data=b"",
         headers=headers,
         method="PUT",
@@ -166,43 +147,35 @@ def refresh_token(bearer_token: str) -> str:
         raise LandbookAuthError(f"Token refresh failed: {exc}") from exc
 
     if resp.get("code") != 200 or "data" not in resp:
-        raise LandbookAuthError(
-            f"Token refresh rejected: {resp.get('msg', 'unknown error')}"
-        )
+        raise LandbookAuthError(f"Token refresh rejected: {resp.get('msg', 'unknown error')}")
     return resp["data"]["accessToken"]["token"]
 
 
-def get_device_attributes(bearer_token: str, pk: str, dk: str) -> dict:
-    """Fetch current device property values (initial state on startup)."""
-    return _api_get(
-        bearer_token,
-        "/v2/binding/enduserapi/getDeviceBusinessAttributes",
-        {"pk": pk, "dk": dk},
-    )
+def get_device_attributes(bearer_token: str, pk: str, dk: str, region: str = DEFAULT_REGION) -> dict:
+    api_base = _region_cfg(region)["api_base"]
+    return _api_get(bearer_token, api_base, "/v2/binding/enduserapi/getDeviceBusinessAttributes", {"pk": pk, "dk": dk})
 
 
-async def async_login(email: str, password: str) -> tuple[str, str]:
+async def async_login(email: str, password: str, region: str = DEFAULT_REGION) -> tuple[str, str]:
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, login, email, password)
+    return await loop.run_in_executor(None, login, email, password, region)
 
 
-async def async_get_device_list(bearer_token: str) -> list[dict]:
+async def async_get_device_list(bearer_token: str, region: str = DEFAULT_REGION) -> list[dict]:
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, get_device_list, bearer_token)
+    return await loop.run_in_executor(None, get_device_list, bearer_token, region)
 
 
-async def async_get_tsl(bearer_token: str, pk: str) -> list[dict]:
+async def async_get_tsl(bearer_token: str, pk: str, region: str = DEFAULT_REGION) -> list[dict]:
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, get_tsl, bearer_token, pk)
+    return await loop.run_in_executor(None, get_tsl, bearer_token, pk, region)
 
 
-async def async_refresh_token(bearer_token: str) -> str:
+async def async_refresh_token(bearer_token: str, region: str = DEFAULT_REGION) -> str:
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, refresh_token, bearer_token)
+    return await loop.run_in_executor(None, refresh_token, bearer_token, region)
 
 
-async def async_get_device_attributes(
-    bearer_token: str, pk: str, dk: str
-) -> dict:
+async def async_get_device_attributes(bearer_token: str, pk: str, dk: str, region: str = DEFAULT_REGION) -> dict:
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, get_device_attributes, bearer_token, pk, dk)
+    return await loop.run_in_executor(None, get_device_attributes, bearer_token, pk, dk, region)

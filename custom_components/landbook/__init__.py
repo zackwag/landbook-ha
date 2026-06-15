@@ -13,9 +13,15 @@ from .const import (
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
     CONF_PRODUCT_KEY,
+    CONF_REGION,
     CONF_UID,
+    DEFAULT_REGION,
     DISPLAY_LIGHT_HINTS,
     DOMAIN,
+    MQTT_PORT,
+    MQTT_WS_PATH,
+    MQTT_KEEPALIVE,
+    REGIONS,
     TEMPERATURE_NAME_HINTS,
     OSCILLATION_NAME_HINTS,
     POWER_SORT_ORDER,
@@ -34,10 +40,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     uid: str = entry.data[CONF_UID]
     pk: str = entry.data[CONF_PRODUCT_KEY]
     dk: str = entry.data[CONF_DEVICE_KEY]
+    region: str = entry.data.get(CONF_REGION, DEFAULT_REGION)
+    region_cfg = REGIONS.get(region, REGIONS[DEFAULT_REGION])
     device_id = f"qd{pk}{dk}"
 
     try:
-        properties = await async_get_tsl(bearer_token, pk)
+        properties = await async_get_tsl(bearer_token, pk, region)
     except LandbookAPIError as exc:
         raise ConfigEntryNotReady(f"Could not fetch TSL model: {exc}") from exc
 
@@ -54,9 +62,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     extra_props = [p for p in properties if id(p) not in claimed]
 
     def _token_refresher() -> str:
-        return refresh_token(bearer_token)
+        return refresh_token(bearer_token, region)
 
-    mqtt_client = LandbookMQTTClient(uid, bearer_token, token_refresher=_token_refresher)
+    mqtt_client = LandbookMQTTClient(
+        uid, bearer_token,
+        mqtt_host=region_cfg["mqtt_host"],
+        token_refresher=_token_refresher,
+    )
     try:
         await hass.async_add_executor_job(mqtt_client.connect)
     except ConnectionError as exc:
@@ -150,7 +162,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Also seed initial state from REST API as a fallback
     try:
-        attrs = await async_get_device_attributes(bearer_token, pk, dk)
+        attrs = await async_get_device_attributes(bearer_token, pk, dk, region)
         _LOGGER.debug("getDeviceBusinessAttributes raw response for %s: %s", dk, attrs)
         initial_state: dict = {}
         if isinstance(attrs, list):

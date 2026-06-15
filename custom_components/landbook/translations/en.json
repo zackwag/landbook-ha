@@ -4,6 +4,7 @@
       "user": {
         "title": "Landbook — Sign In",
         "data": {
+          "region": "Region",
           "email": "Email",
           "password": "Password"
         }

@@ -10,7 +10,7 @@ from typing import Any
 
 import paho.mqtt.client as mqtt
 
-from .const import MQTT_HOST, MQTT_KEEPALIVE, MQTT_PORT, MQTT_WS_PATH
+from .const import MQTT_KEEPALIVE, MQTT_PORT, MQTT_WS_PATH, REGIONS, DEFAULT_REGION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -18,10 +18,17 @@ _LOGGER = logging.getLogger(__name__)
 class LandbookMQTTClient:
     """Manages a single persistent MQTT connection for one account."""
 
-    def __init__(self, uid: str, bearer_token: str, token_refresher: Callable[[], str] | None = None) -> None:
+    def __init__(
+        self,
+        uid: str,
+        bearer_token: str,
+        mqtt_host: str | None = None,
+        token_refresher: Callable[[], str] | None = None,
+    ) -> None:
         self._uid = uid
         self._bearer_token = bearer_token
-        self._token_refresher = token_refresher  # optional callable that returns a fresh token
+        self._mqtt_host = mqtt_host or REGIONS[DEFAULT_REGION]["mqtt_host"]
+        self._token_refresher = token_refresher
         self._client: mqtt.Client | None = None
         self._connected = False
         self._shutting_down = False
@@ -53,7 +60,7 @@ class LandbookMQTTClient:
         client.on_message = self._on_message
         client.on_disconnect = self._on_disconnect
 
-        client.connect(MQTT_HOST, MQTT_PORT, keepalive=MQTT_KEEPALIVE)
+        client.connect(self._mqtt_host, MQTT_PORT, keepalive=MQTT_KEEPALIVE)
         client.loop_start()
         self._client = client
 

@@ -18,11 +18,16 @@ from .const import (
     CONF_PASSWORD,
     CONF_PRODUCT_KEY,
     CONF_PRODUCT_NAME,
+    CONF_REGION,
     CONF_UID,
+    DEFAULT_REGION,
     DOMAIN,
+    REGIONS,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+REGION_OPTIONS = {key: cfg["label"] for key, cfg in REGIONS.items()}
 
 
 class LandbookOptionsFlow(config_entries.OptionsFlow):
@@ -59,19 +64,21 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._email: str = ""
         self._bearer_token: str = ""
         self._uid: str = ""
+        self._region: str = DEFAULT_REGION
         self._devices: list[dict] = []
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Step 1: collect email + password, attempt login."""
+        """Step 1: choose region, collect email + password, attempt login."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
             email = user_input[CONF_EMAIL]
             password = user_input[CONF_PASSWORD]
+            region = user_input[CONF_REGION]
             try:
-                bearer_token, uid = await async_login(email, password)
+                bearer_token, uid = await async_login(email, password, region)
             except LandbookAuthError as exc:
                 _LOGGER.error("Landbook login error: %s", exc)
                 errors["base"] = "invalid_auth"
@@ -82,12 +89,14 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._email = email
                 self._bearer_token = bearer_token
                 self._uid = uid
+                self._region = region
                 return await self.async_step_pick_device()
 
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
                 {
+                    vol.Required(CONF_REGION, default=DEFAULT_REGION): vol.In(REGION_OPTIONS),
                     vol.Required(CONF_EMAIL): str,
                     vol.Required(CONF_PASSWORD): str,
                 }
@@ -103,7 +112,7 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if not self._devices:
             try:
-                self._devices = await async_get_device_list(self._bearer_token)
+                self._devices = await async_get_device_list(self._bearer_token, self._region)
             except Exception as exc:  # noqa: BLE001
                 _LOGGER.exception("Failed to fetch device list: %s", exc)
                 errors["base"] = "cannot_connect"
@@ -117,14 +126,13 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if device is None:
                 errors["base"] = "device_not_found"
             else:
-                await self.async_set_unique_id(
-                    f"{DOMAIN}_{device['deviceKey']}"
-                )
+                await self.async_set_unique_id(f"{DOMAIN}_{device['deviceKey']}")
                 self._abort_if_unique_id_configured()
 
                 return self.async_create_entry(
                     title=device["deviceName"],
                     data={
+                        CONF_REGION: self._region,
                         CONF_EMAIL: self._email,
                         CONF_BEARER_TOKEN: self._bearer_token,
                         CONF_UID: self._uid,

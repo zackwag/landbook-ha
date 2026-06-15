@@ -48,9 +48,15 @@ Credentials are stored in the HA config entry. The bearer token is refreshed on 
 - `paho-mqtt >= 2.0.0` (installed automatically)
 - `pycryptodome >= 3.0.0` (installed automatically)
 
-## Limitations
+## Supported Regions
 
-- **US region only** — the integration connects to the Landbook US servers (`iot-api.quectelus.com`, `iot-south.landecia.com`). Accounts on EU or CN servers are not currently supported.
+| Region | API |
+|--------|-----|
+| United States | `iot-api.quectelus.com` |
+| Europe | `iot-api.quecteleu.com` |
+| China | `iot-gateway.quectel.com` |
+
+Select your region during setup. EU and CN support is untested — if you try it, please open an issue to let us know if it works.
 
 ## Options
 
