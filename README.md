@@ -50,6 +50,9 @@ Credentials are stored in the HA config entry. The bearer token is refreshed on 
 
 ## Notes
 
+- Temperature is reported by the device on state change or firmware heartbeat — there is no fixed update interval and the integration does not poll for it. While the fan is off the temperature sensor will show as `unknown`.
+
+
 - The integration auto-detects the power switch and speed control from the device's TSL model. If detection is wrong, open an issue with your TSL dump.
 - Only one MQTT connection is created per account regardless of how many devices you add.
 

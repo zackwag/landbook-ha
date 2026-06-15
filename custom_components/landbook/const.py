@@ -54,4 +54,17 @@ OSCILLATION_NAME_HINTS = ("oscillat", "swing", "rotate")
 # Keys are case-insensitive matches against p["name"].lower()
 DISPLAY_NAME_OVERRIDES = {
     "light": "Device Display",
+    "sound": "Device Sound",
 }
+
+# Display/backlight BOOL properties that should be light entities
+DISPLAY_LIGHT_HINTS = ("light", "display", "backlight", "screen")
+
+# Switch display name overrides and icons
+# Keys match TSL property name (lowercase)
+SWITCH_ICON_MAP = {
+    "sound": "mdi:volume-high",
+}
+
+# Temperature property detection
+TEMPERATURE_NAME_HINTS = ("temperature", "temp")

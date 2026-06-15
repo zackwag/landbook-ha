@@ -14,7 +14,9 @@ from .const import (
     CONF_DEVICE_KEY,
     CONF_PRODUCT_KEY,
     CONF_UID,
+    DISPLAY_LIGHT_HINTS,
     DOMAIN,
+    TEMPERATURE_NAME_HINTS,
     OSCILLATION_NAME_HINTS,
     POWER_SORT_ORDER,
     SPEED_NAME_HINTS,
@@ -23,7 +25,7 @@ from .mqtt_client import LandbookMQTTClient
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["fan", "number", "select", "switch"]
+PLATFORMS = ["fan", "light", "number", "select", "sensor", "switch"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -43,7 +45,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     speed_prop        = _find_speed_prop(properties, power_prop)
     oscillation_prop  = _find_oscillation_prop(properties, power_prop, speed_prop)
 
-    claimed = {id(p) for p in [power_prop, speed_prop, oscillation_prop] if p}
+    temperature_prop = _find_temperature_prop(properties, claimed)
+    if temperature_prop:
+        claimed.add(id(temperature_prop))
+    light_props = _find_light_props(properties, {id(p) for p in [power_prop, speed_prop, oscillation_prop] if p})
+    claimed = {id(p) for p in [power_prop, speed_prop, oscillation_prop] if p} | {id(p) for p in light_props}
     extra_props = [p for p in properties if id(p) not in claimed]
 
     mqtt_client = LandbookMQTTClient(uid, bearer_token)
@@ -62,6 +68,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "speed_prop": speed_prop,
         "oscillation_prop": oscillation_prop,
         "extra_props": extra_props,
+        "light_props": light_props,
+        "temperature_prop": temperature_prop,
         "state": {},
         "online": True,  # optimistic until we get an onl_ message
     }
@@ -69,20 +77,43 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     def _mqtt_callback(suffix: str, payload: Any) -> None:
         entry_data = hass.data[DOMAIN][entry.entry_id]
 
-        if suffix in ("ack_", "bus_"):
-            kv = payload.get("kv")
-            if isinstance(kv, list):
+        if suffix == "bus_":
+            # kv is nested under data.kv in bus_ reports
+            data_block = payload.get("data", payload)
+            kv = data_block.get("kv", {})
+            if isinstance(kv, dict):
+                # Cast numeric strings to appropriate types
+                for k, v in kv.items():
+                    try:
+                        kv[k] = int(v)
+                    except (ValueError, TypeError):
+                        pass
+                entry_data["state"].update(kv)
+                hass.async_create_task(
+                    _async_update_entities(hass, entry.entry_id)
+                )
+            elif isinstance(kv, list):
                 for item in kv:
                     entry_data["state"].update(item)
                 hass.async_create_task(
                     _async_update_entities(hass, entry.entry_id)
                 )
 
+        elif suffix == "ack_":
+            if payload.get("status") != "succ":
+                _LOGGER.warning("Command ack failed for %s: %s", dk, payload)
+
         elif suffix == "onl_":
-            # Payload: {"status": 1} = online, {"status": 0} = offline
-            # Some firmware uses "online": true/false instead
-            status = payload.get("status", payload.get("online"))
+            # Log the raw payload so we can confirm the shape
+            _LOGGER.debug("onl_ raw payload for %s: %s", dk, payload)
+            # Common Quectel shapes: {"status":1}, {"online":true}, {"connectStatus":1}
+            status = (
+                payload.get("status")
+                or payload.get("online")
+                or payload.get("connectStatus")
+            )
             if status is not None:
+                # Treat any truthy value as online
                 online = bool(status)
                 if entry_data["online"] != online:
                     entry_data["online"] = online
@@ -94,6 +125,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     hass.async_create_task(
                         _async_update_entities(hass, entry.entry_id)
                     )
+            else:
+                _LOGGER.warning(
+                    "onl_ payload for %s had no recognised status key: %s",
+                    dk, payload
+                )
 
     mqtt_client.subscribe_device(device_id, _mqtt_callback)
 
@@ -182,3 +218,37 @@ def _find_oscillation_prop(
         ):
             return p
     return None
+
+
+def _find_light_props(
+    properties: list[dict], claimed_ids: set
+) -> list[dict]:
+    """Find BOOL properties that should be light entities (display/backlight)."""
+    return [
+        p for p in properties
+        if id(p) not in claimed_ids
+        and p["dataType"] == "BOOL"
+        and any(
+            hint in p.get("name", "").lower() or hint in p.get("code", "").lower()
+            for hint in DISPLAY_LIGHT_HINTS
+        )
+    ]
+
+
+def _find_temperature_prop(
+    properties: list[dict], claimed_ids: set
+) -> dict | None:
+    """Find a temperature property from the TSL or return a virtual one for bus_ reports."""
+    for p in properties:
+        if id(p) in claimed_ids:
+            continue
+        name_lower = p.get("name", "").lower()
+        code_lower = p.get("code", "").lower()
+        if any(
+            hint in name_lower or hint in code_lower
+            for hint in TEMPERATURE_NAME_HINTS
+        ):
+            return p
+    # Temperature may not be in the writable TSL but still arrive in bus_ reports
+    # Return a synthetic prop so the sensor entity knows to watch for it
+    return {"code": "temperature", "name": "Temperature", "dataType": "INT", "synthetic": True}

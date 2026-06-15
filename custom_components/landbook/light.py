@@ -1,16 +1,16 @@
-"""Switch entities for BOOL-typed Landbook extra properties."""
+"""Light entities for display-type BOOL Landbook properties."""
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from homeassistant.components.switch import SwitchEntity
+from homeassistant.components.light import LightEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_DEVICE_NAME, DISPLAY_LIGHT_HINTS, DISPLAY_NAME_OVERRIDES, SWITCH_ICON_MAP, DOMAIN
+from .const import CONF_DEVICE_NAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -22,20 +22,15 @@ async def async_setup_entry(
 ) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     entities = [
-        LandbookSwitch(hass, entry, data, prop)
-        for prop in data["extra_props"]
-        if prop["dataType"] == "BOOL"
-        and not any(
-            hint in prop.get("name", "").lower() or hint in prop.get("code", "").lower()
-            for hint in DISPLAY_LIGHT_HINTS
-        )
+        LandbookLight(hass, entry, data, prop)
+        for prop in data.get("light_props", [])
     ]
     if entities:
         async_add_entities(entities, update_before_add=False)
 
 
-class LandbookSwitch(SwitchEntity):
-    """A switch entity for a BOOL TSL property."""
+class LandbookLight(LightEntity):
+    """A light entity for a display/backlight BOOL TSL property."""
 
     _attr_should_poll = False
 
@@ -51,20 +46,11 @@ class LandbookSwitch(SwitchEntity):
         self._data = data
         self._prop = prop
         self._code: str = prop["code"]
-
-        # Resolve on/off values from specs (default True/False)
-        specs = {s["name"].lower(): s["value"] for s in (prop.get("specs") or [])}
-        self._on_value = specs.get("on", specs.get("open", specs.get("enable", "true"))) == "true"
-
         self._attr_is_on: bool = False
 
         device_name: str = entry.data[CONF_DEVICE_NAME]
-        tsl_name: str = prop.get("name", self._code)
-        display_name = DISPLAY_NAME_OVERRIDES.get(tsl_name.lower(), tsl_name)
-
-        self._attr_icon = SWITCH_ICON_MAP.get(tsl_name.lower())
         self._attr_unique_id = f"{entry.entry_id}_{self._code}"
-        self._attr_name = f"{device_name} {display_name}"
+        self._attr_name = f"{device_name} Device Display"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=device_name,
