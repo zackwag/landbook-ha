@@ -1,0 +1,27 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Landbook — Sign In",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
+      },
+      "pick_device": {
+        "title": "Select Device",
+        "data": {
+          "device": "Device"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid email or password.",
+      "cannot_connect": "Unable to connect to the Landbook API.",
+      "device_not_found": "Selected device not found."
+    },
+    "abort": {
+      "already_configured": "This device is already configured."
+    }
+  }
+}

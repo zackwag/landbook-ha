@@ -1,0 +1,222 @@
+"""Fan entity for Landbook integration."""
+from __future__ import annotations
+
+import logging
+import math
+from typing import Any
+
+from homeassistant.components.fan import FanEntity, FanEntityFeature
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from .const import CONF_DEVICE_NAME, DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    data = hass.data[DOMAIN][entry.entry_id]
+    async_add_entities([LandbookFan(hass, entry, data)], update_before_add=False)
+
+
+class LandbookFan(FanEntity):
+    """Represents the fan device."""
+
+    _attr_should_poll = False
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, data: dict) -> None:
+        self._hass = hass
+        self._entry = entry
+        self._data = data
+        self._power_prop = data["power_prop"]
+        self._speed_prop = data["speed_prop"]
+
+        device_name: str = entry.data[CONF_DEVICE_NAME]
+        self._attr_unique_id = f"{entry.entry_id}_fan"
+        self._attr_name = device_name
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=device_name,
+            manufacturer="Landbook",
+        )
+
+        # Build speed preset list from ENUM specs or INT range
+        self._preset_modes: list[str] = []
+        self._speed_values: list[int] = []
+        if self._speed_prop:
+            self._build_speed_map()
+
+        self._is_on: bool = False
+        self._current_speed_idx: int = 0
+
+    # ------------------------------------------------------------------
+    # Speed map
+    # ------------------------------------------------------------------
+
+    def _build_speed_map(self) -> None:
+        prop = self._speed_prop
+        dtype = prop["dataType"]
+        specs = prop.get("specs", {})
+        if dtype == "ENUM":
+            for spec in specs:
+                self._preset_modes.append(spec["name"])
+                self._speed_values.append(int(spec["value"]))
+        elif dtype == "INT":
+            lo = int(specs.get("min", 0))
+            hi = int(specs.get("max", lo))
+            step = int(specs.get("step", 1)) or 1
+            for v in range(lo, hi + 1, step):
+                self._preset_modes.append(str(v))
+                self._speed_values.append(v)
+
+    # ------------------------------------------------------------------
+    # HA Fan API
+    # ------------------------------------------------------------------
+
+    @property
+    def supported_features(self) -> FanEntityFeature:
+        features = FanEntityFeature(0)
+        if self._speed_prop:
+            if self._speed_prop["dataType"] == "ENUM":
+                features |= FanEntityFeature.PRESET_MODE
+            else:
+                features |= FanEntityFeature.SET_SPEED
+        return features
+
+    @property
+    def is_on(self) -> bool:
+        return self._is_on
+
+    @property
+    def percentage(self) -> int | None:
+        if not self._speed_values:
+            return None
+        if self._current_speed_idx >= len(self._speed_values):
+            return None
+        return round(
+            (self._current_speed_idx + 1) / len(self._speed_values) * 100
+        )
+
+    @property
+    def speed_count(self) -> int:
+        return len(self._speed_values) or 1
+
+    @property
+    def preset_modes(self) -> list[str] | None:
+        return self._preset_modes if self._preset_modes else None
+
+    @property
+    def preset_mode(self) -> str | None:
+        if not self._preset_modes:
+            return None
+        if self._current_speed_idx < len(self._preset_modes):
+            return self._preset_modes[self._current_speed_idx]
+        return None
+
+    # ------------------------------------------------------------------
+    # Commands
+    # ------------------------------------------------------------------
+
+    async def async_turn_on(
+        self,
+        percentage: int | None = None,
+        preset_mode: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        props: dict = {}
+        if self._power_prop:
+            props[self._power_prop["code"]] = True
+
+        if preset_mode and preset_mode in self._preset_modes:
+            idx = self._preset_modes.index(preset_mode)
+            props[self._speed_prop["code"]] = self._speed_values[idx]
+            self._current_speed_idx = idx
+        elif percentage is not None and self._speed_values:
+            idx = max(
+                0,
+                min(
+                    len(self._speed_values) - 1,
+                    math.ceil(percentage / 100 * len(self._speed_values)) - 1,
+                ),
+            )
+            props[self._speed_prop["code"]] = self._speed_values[idx]
+            self._current_speed_idx = idx
+
+        self._is_on = True
+        self._send(props)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        if not self._power_prop:
+            return
+        self._is_on = False
+        self._send({self._power_prop["code"]: False})
+        self.async_write_ha_state()
+
+    async def async_set_percentage(self, percentage: int) -> None:
+        if not self._speed_values:
+            return
+        idx = max(
+            0,
+            min(
+                len(self._speed_values) - 1,
+                math.ceil(percentage / 100 * len(self._speed_values)) - 1,
+            ),
+        )
+        self._current_speed_idx = idx
+        self._send({self._speed_prop["code"]: self._speed_values[idx]})
+        self.async_write_ha_state()
+
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
+        if preset_mode not in self._preset_modes:
+            return
+        idx = self._preset_modes.index(preset_mode)
+        self._current_speed_idx = idx
+        self._send({self._speed_prop["code"]: self._speed_values[idx]})
+        self.async_write_ha_state()
+
+    # ------------------------------------------------------------------
+    # State updates from MQTT
+    # ------------------------------------------------------------------
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            self.hass.bus.async_listen(
+                f"{DOMAIN}_state_update_{self._entry.entry_id}",
+                self._handle_state_update,
+            )
+        )
+
+    @callback
+    def _handle_state_update(self, event: Event) -> None:
+        shared: dict = self._data["state"]
+
+        if self._power_prop:
+            raw = shared.get(self._power_prop["code"])
+            if raw is not None:
+                self._is_on = bool(raw)
+
+        if self._speed_prop:
+            raw = shared.get(self._speed_prop["code"])
+            if raw is not None and raw in self._speed_values:
+                self._current_speed_idx = self._speed_values.index(raw)
+
+        self.async_write_ha_state()
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _send(self, props: dict) -> None:
+        self._data["mqtt_client"].send_write(
+            self._data["device_id"],
+            self._data["pk"],
+            self._data["dk"],
+            props,
+        )
