@@ -141,7 +141,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     )
                     hass.loop.call_soon_threadsafe(
                         hass.async_create_task,
-                        _async_update_entities(hass, entry.entry_id, set()),
+                        _async_update_entities(hass, entry.entry_id, None),
                     )
             else:
                 _LOGGER.warning(
