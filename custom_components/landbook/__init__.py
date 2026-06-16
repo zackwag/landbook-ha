@@ -61,6 +61,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     temperature_prop = _find_temperature_prop(properties, claimed)
     if temperature_prop and not temperature_prop.get("synthetic"):
         claimed.add(id(temperature_prop))
+    countdown_prop = _find_countdown_prop(properties, claimed)
+    if countdown_prop:
+        claimed.add(id(countdown_prop))
     extra_props = [p for p in properties if id(p) not in claimed]
 
     def _token_refresher() -> str:
@@ -86,6 +89,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "speed_prop": speed_prop,
         "mode_prop": mode_prop,
         "oscillation_prop": oscillation_prop,
+        "countdown_prop": countdown_prop,
         "extra_props": extra_props,
         "light_props": light_props,
         "temperature_prop": temperature_prop,
@@ -314,3 +318,20 @@ def _find_temperature_prop(
     # Temperature may not be in the writable TSL but still arrive in bus_ reports
     # Return a synthetic prop so the sensor entity knows to watch for it
     return {"code": "temperature", "name": "Temperature", "dataType": "INT", "synthetic": True}
+
+
+def _find_countdown_prop(
+    properties: list[dict], claimed_ids: set
+) -> dict | None:
+    """Find a countdown/timer ENUM property."""
+    for p in properties:
+        if id(p) in claimed_ids:
+            continue
+        name_lower = p.get("name", "").lower()
+        code_lower = p.get("code", "").lower()
+        if p["dataType"] == "ENUM" and any(
+            hint in name_lower or hint in code_lower
+            for hint in ("countdown", "timer", "timing")
+        ):
+            return p
+    return None

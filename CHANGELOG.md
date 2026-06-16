@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.10] - 2026-06-16
+
+- Fix countdown timer showing raw option names — now shows human-readable minutes
+
+
+
 ## [1.1.9] - 2026-06-16
 
 - Updating release generation- Add description text to mute-on-command option in the UI
