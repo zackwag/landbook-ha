@@ -79,7 +79,7 @@ After setup, click **Configure** on the integration card to change:
 - **Device availability** — all entities go unavailable if the device drops off the Landbook cloud (MQTT `onl_` event). They recover automatically when the device reconnects.
 - **Session expiry** — if your Landbook session expires and cannot be renewed automatically, Home Assistant will prompt you to re-enter your password from the integration card. No need to remove and re-add the device.
 - The integration auto-detects power, speed, mode, and oscillation properties from the device's TSL model. If detection is wrong for your device, open an issue with a debug log.
-- One MQTT connection is maintained per account regardless of how many devices you add.
+- One MQTT connection is maintained per account regardless of how many devices you add. All devices on the same account share a single connection — adding a second device does not open a second connection to the broker.
 
 ## Troubleshooting
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.0] - 2026-06-16
+
+- Share a single MQTT connection across all devices on the same account
+
+
+
 ## [1.1.15] - 2026-06-16
 
 - Update README — add countdown entity, Auto mode speed note, re-auth note, and mute option description

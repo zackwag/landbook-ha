@@ -66,33 +66,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         claimed.add(id(countdown_prop))
     extra_props = [p for p in properties if id(p) not in claimed]
 
-    def _token_refresher() -> str:
-        try:
-            new_token = refresh_token(bearer_token, region)
-        except Exception as exc:
-            _LOGGER.warning("Token refresh failed for %s, triggering reauth: %s", dk, exc)
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    accounts = domain_data.setdefault("_accounts", {})
+
+    if uid not in accounts:
+        # First device for this account — create the shared MQTT client
+        def _token_refresher() -> str:
+            try:
+                new_token = refresh_token(bearer_token, region)
+            except Exception as exc:
+                _LOGGER.warning("Token refresh failed for %s, triggering reauth: %s", uid, exc)
+                # Trigger reauth on every entry for this account
+                for eid in list(accounts.get(uid, {}).get("entries", set())):
+                    cfg_entry = hass.config_entries.async_get_entry(eid)
+                    if cfg_entry:
+                        hass.loop.call_soon_threadsafe(
+                            hass.async_create_task,
+                            _async_trigger_reauth(hass, cfg_entry),
+                        )
+                raise
             hass.loop.call_soon_threadsafe(
                 hass.async_create_task,
-                _async_trigger_reauth(hass, entry),
+                _async_persist_token_for_account(hass, uid, new_token),
             )
-            raise
-        hass.loop.call_soon_threadsafe(
-            hass.async_create_task,
-            _async_persist_token(hass, entry, new_token),
+            return new_token
+
+        mqtt_client = LandbookMQTTClient(
+            uid, bearer_token,
+            mqtt_host=region_cfg["mqtt_host"],
+            token_refresher=_token_refresher,
         )
-        return new_token
+        try:
+            await hass.async_add_executor_job(mqtt_client.connect)
+        except ConnectionError as exc:
+            raise ConfigEntryNotReady(f"MQTT connection failed: {exc}") from exc
 
-    mqtt_client = LandbookMQTTClient(
-        uid, bearer_token,
-        mqtt_host=region_cfg["mqtt_host"],
-        token_refresher=_token_refresher,
-    )
-    try:
-        await hass.async_add_executor_job(mqtt_client.connect)
-    except ConnectionError as exc:
-        raise ConfigEntryNotReady(f"MQTT connection failed: {exc}") from exc
+        accounts[uid] = {"client": mqtt_client, "entries": set()}
+        _LOGGER.info("Landbook: shared MQTT connection established for account %s", uid)
+    else:
+        mqtt_client = accounts[uid]["client"]
+        _LOGGER.debug("Landbook: reusing shared MQTT connection for account %s", uid)
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
+    accounts[uid]["entries"].add(entry.entry_id)
+
+    domain_data[entry.entry_id] = {
         "mqtt_client": mqtt_client,
         "device_id": device_id,
         "pk": pk,
@@ -107,7 +124,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "light_props": light_props,
         "temperature_prop": temperature_prop,
         "state": {},
-        "online": True,  # optimistic until we get an onl_ message
+        "online": True,
+        "uid": uid,
+        "all_codes": [p["code"] for p in properties],
     }
 
     def _mqtt_callback(suffix: str, payload: Any) -> None:
@@ -116,7 +135,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
 
         if suffix == "bus_":
-            # Covers both MATTR/REPORT and MATTR/READRESP — same data.kv shape
             data_block = payload.get("data", payload)
             kv = data_block.get("kv", {})
             changed_keys: set[str] = set()
@@ -138,10 +156,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _LOGGER.warning("Command ack failed for %s: %s", dk, payload)
 
         elif suffix == "onl_":
-            # Log the raw payload so we can confirm the shape
             _LOGGER.debug("onl_ raw payload for %s: %s", dk, payload)
-            # Quectel shape: {"type":"ONLINE","data":{"value":1}}
-            # value=1 means online, value=0 means offline
             status = (
                 payload.get("data", {}).get("value")
                 if isinstance(payload.get("data"), dict)
@@ -150,35 +165,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 or payload.get("connectStatus")
             )
             if status is not None:
-                # Treat any truthy value as online
                 online = bool(status)
                 if entry_data["online"] != online:
                     entry_data["online"] = online
-                    _LOGGER.info(
-                        "Landbook device %s went %s",
-                        dk,
-                        "online" if online else "offline",
-                    )
+                    _LOGGER.info("Landbook device %s went %s", dk, "online" if online else "offline")
                     hass.loop.call_soon_threadsafe(
                         hass.async_create_task,
                         _async_update_entities(hass, entry.entry_id, None),
                     )
             else:
-                _LOGGER.warning(
-                    "onl_ payload for %s had no recognised status key: %s",
-                    dk, payload
-                )
+                _LOGGER.warning("onl_ payload for %s had no recognised status key: %s", dk, payload)
 
     mqtt_client.subscribe_device(device_id, _mqtt_callback)
 
-    # Request full current state via READ-ATTR on every (re)connect
-    all_codes = [p["code"] for p in properties]
+    # On (re)connect, request state for ALL devices on this account
+    def _request_all_states() -> None:
+        for eid, edata in hass.data.get(DOMAIN, {}).items():
+            if eid == "_accounts" or not isinstance(edata, dict):
+                continue
+            if edata.get("uid") == uid:
+                mqtt_client.send_read(
+                    edata["device_id"], edata["pk"], edata["dk"], edata["all_codes"]
+                )
 
-    def _request_full_state() -> None:
-        mqtt_client.send_read(device_id, pk, dk, all_codes)
-
-    mqtt_client._on_reconnect = _request_full_state
-    _request_full_state()
+    mqtt_client._on_reconnect = _request_all_states
+    mqtt_client.send_read(device_id, pk, dk, [p["code"] for p in properties])
 
     # Also seed initial state from REST API as a fallback
     try:
@@ -240,19 +251,32 @@ async def _async_trigger_reauth(hass: HomeAssistant, entry: ConfigEntry) -> None
     entry.async_start_reauth(hass)
 
 
-async def _async_persist_token(hass: HomeAssistant, entry: ConfigEntry, token: str) -> None:
-    hass.config_entries.async_update_entry(
-        entry, data={**entry.data, CONF_BEARER_TOKEN: token}
-    )
+async def _async_persist_token_for_account(hass: HomeAssistant, uid: str, token: str) -> None:
+    """Persist a refreshed token to all config entries for this account."""
+    accounts = hass.data.get(DOMAIN, {}).get("_accounts", {})
+    for eid in list(accounts.get(uid, {}).get("entries", set())):
+        cfg_entry = hass.config_entries.async_get_entry(eid)
+        if cfg_entry:
+            hass.config_entries.async_update_entry(
+                cfg_entry, data={**cfg_entry.data, CONF_BEARER_TOKEN: token}
+            )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        data = hass.data[DOMAIN].pop(entry.entry_id, {})
-        mqtt_client: LandbookMQTTClient | None = data.get("mqtt_client")
-        if mqtt_client:
-            await hass.async_add_executor_job(mqtt_client.disconnect)
+        domain_data = hass.data.get(DOMAIN, {})
+        entry_data = domain_data.pop(entry.entry_id, {})
+        uid = entry_data.get("uid")
+        accounts = domain_data.get("_accounts", {})
+        if uid and uid in accounts:
+            accounts[uid]["entries"].discard(entry.entry_id)
+            if not accounts[uid]["entries"]:
+                # Last device for this account — disconnect
+                client: LandbookMQTTClient = accounts[uid]["client"]
+                await hass.async_add_executor_job(client.disconnect)
+                del accounts[uid]
+                _LOGGER.info("Landbook: shared MQTT connection closed for account %s", uid)
     return unload_ok
 
 
