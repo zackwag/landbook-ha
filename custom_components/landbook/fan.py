@@ -12,8 +12,8 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import (CONF_DEVICE_NAME, CONF_MUTE_ON_COMMAND, CONF_PRODUCT_NAME,
-                    DOMAIN)
+from .const import (CONF_DEVICE_NAME, CONF_FW_VERSION, CONF_MUTE_ON_COMMAND,
+                    CONF_PRODUCT_NAME, DOMAIN)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +43,7 @@ class LandbookFan(FanEntity):
 
         device_name: str = entry.data[CONF_DEVICE_NAME]
         product_name: str = entry.data.get(CONF_PRODUCT_NAME, "")
+        fw_version: str | None = entry.data.get(CONF_FW_VERSION)
         self._attr_unique_id = f"{entry.entry_id}_fan"
         self._attr_name = device_name
         self._attr_device_info = DeviceInfo(
@@ -50,6 +51,7 @@ class LandbookFan(FanEntity):
             name=device_name,
             manufacturer="Landbook",
             model=product_name or None,
+            sw_version=fw_version,
             suggested_area=_suggest_area(device_name, product_name),
         )
 

@@ -65,15 +65,19 @@ LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 CHANGELOG="CHANGELOG.md"
 DATE=$(date +%Y-%m-%d)
 
-# Build the new entry
+# Build the new entry — include intermediate commits if any, else just the release message
 {
   echo "## [$NEW_VERSION] - $DATE"
   echo ""
   if [[ -n "$LAST_TAG" ]]; then
-    git log "${LAST_TAG}..HEAD" --pretty=format:"- %s" --no-merges
+    COMMITS=$(git log "${LAST_TAG}..HEAD" --pretty=format:"- %s" --no-merges)
   else
-    git log --pretty=format:"- %s" --no-merges
+    COMMITS=$(git log --pretty=format:"- %s" --no-merges)
   fi
+  if [[ -n "$COMMITS" ]]; then
+    echo "$COMMITS"
+  fi
+  echo "- $MESSAGE"
   echo ""
   echo ""
 } > /tmp/changelog_entry.txt

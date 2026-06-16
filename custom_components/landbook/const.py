@@ -51,6 +51,7 @@ CONF_PRODUCT_KEY = "product_key"
 CONF_DEVICE_NAME = "device_name"
 CONF_PRODUCT_NAME = "product_name"
 CONF_MUTE_ON_COMMAND = "mute_on_command"
+CONF_FW_VERSION = "fw_version"
 
 # TSL property data types
 DTYPE_BOOL = "BOOL"

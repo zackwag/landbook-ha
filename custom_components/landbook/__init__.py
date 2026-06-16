@@ -12,6 +12,7 @@ from .api import LandbookAPIError, LandbookAuthError, async_get_device_attribute
 from .const import (
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
+    CONF_FW_VERSION,
     CONF_PRODUCT_KEY,
     CONF_REGION,
     CONF_UID,
@@ -166,15 +167,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         attrs = await async_get_device_attributes(bearer_token, pk, dk, region)
         _LOGGER.debug("getDeviceBusinessAttributes raw response for %s: %s", dk, attrs)
+
+        # Extract firmware version from deviceData and persist to entry
+        device_data = (attrs if isinstance(attrs, dict) else {}).get("deviceData") or {}
+        fw_version = device_data.get("version")
+        if fw_version and entry.data.get(CONF_FW_VERSION) != fw_version:
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, CONF_FW_VERSION: fw_version}
+            )
+
+        # Seed property state from customizeTslInfo list
+        tsl_info = (attrs if isinstance(attrs, dict) else {}).get("customizeTslInfo") or attrs
         initial_state: dict = {}
-        if isinstance(attrs, list):
-            for item in attrs:
-                code = item.get("code")
-                val = item.get("value")
+        if isinstance(tsl_info, list):
+            for item in tsl_info:
+                code = item.get("resourceCode") or item.get("code")
+                val = item.get("resourceValce") or item.get("value")
                 if code is not None:
                     initial_state[code] = val
-        elif isinstance(attrs, dict):
-            initial_state = attrs
+        elif isinstance(tsl_info, dict):
+            initial_state = tsl_info
         _LOGGER.debug("Initial state seeded for %s: %s", dk, initial_state)
         hass.data[DOMAIN][entry.entry_id]["state"] = initial_state
     except LandbookAPIError as exc:
