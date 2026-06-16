@@ -32,6 +32,9 @@
         "title": "Landbook Options",
         "data": {
           "mute_on_command": "Mute beep when turning on or changing speed"
+        },
+        "data_description": {
+          "mute_on_command": "Suppresses the confirmation beep after each command. Does not permanently change the device sound setting — use the Device Sound switch for that."
         }
       }
     }

@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.9] - 2026-06-16
+
+- Updating release generation- Add description text to mute-on-command option in the UI
+
+
+
 ## [1.1.8] - 2026-06-16
 
 - Show firmware version in device info
