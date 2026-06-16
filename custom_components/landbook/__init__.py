@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .api import LandbookAPIError, LandbookAuthError, async_get_device_attributes, async_get_tsl, refresh_token
+from .api import LandbookAPIError, async_get_device_attributes, async_get_tsl, refresh_token
 from .const import (
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
@@ -19,9 +19,6 @@ from .const import (
     DEFAULT_REGION,
     DISPLAY_LIGHT_HINTS,
     DOMAIN,
-    MQTT_PORT,
-    MQTT_WS_PATH,
-    MQTT_KEEPALIVE,
     REGIONS,
     TEMPERATURE_NAME_HINTS,
     OSCILLATION_NAME_HINTS,
@@ -127,7 +124,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "device_id": device_id,
         "pk": pk,
         "dk": dk,
-        "bearer_token": bearer_token,
         "power_prop": power_prop,
         "speed_prop": speed_prop,
         "mode_prop": mode_prop,

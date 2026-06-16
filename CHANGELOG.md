@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.5] - 2026-06-16
+
+- Remove unused imports, fix hassfest CI pin, update info.md
+
+
+
 ## [1.2.4] - 2026-06-16
 
 - Fix token refresh using latest token, add options reload listener, pin CI actions, add quality_scale and hacs filename

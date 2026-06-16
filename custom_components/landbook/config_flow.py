@@ -8,7 +8,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 
-from .api import LandbookAuthError, async_get_device_list, async_login, async_refresh_token
+from .api import LandbookAuthError, async_get_device_list, async_login
 from .const import (
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
