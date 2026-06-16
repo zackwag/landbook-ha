@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 
 from homeassistant.helpers.event import async_track_time_interval
 from datetime import timedelta
@@ -35,6 +36,8 @@ from .mqtt_client import LandbookMQTTClient
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["diagnostics", "fan", "light", "number", "select", "sensor", "switch"]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:

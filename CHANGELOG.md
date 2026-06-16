@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.7] - 2026-06-16
+
+- Fix hassfest — sort manifest keys and add CONFIG_SCHEMA
+
+
+
 ## [1.2.6] - 2026-06-16
 
 - Add opt-in Wi-Fi signal strength sensor with 5-minute polling
