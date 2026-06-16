@@ -217,5 +217,16 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-### mac ###
+# MacOS
 .DS_Store
+
+# Home Assistant
+*.db
+*.db-shm
+*.db-wal
+home-assistant.log
+home-assistant_v2.db
+
+# Landbook dev
+debug_payloads/
+*.tar.gz

@@ -51,7 +51,7 @@ confirm="${confirm:-Y}"
 [[ "$confirm" =~ ^[Yy]$ ]] || exit 0
 
 # --- Update version in manifest.json ---
-sed -i '' "s/\"version\": \"${CURRENT}\"/\"version\": \"${NEW_VERSION}\"/" \
+sed -i '' "\"s/\\\"version\\\": \\\"${CURRENT}\\\"/\\\"version\\\": \\\"${NEW_VERSION}\\\"/\"" \
   custom_components/landbook/manifest.json
 
 # --- Update version in .bumpversion.cfg ---
@@ -60,8 +60,48 @@ sed -i '' "s/^current_version = .*/current_version = ${NEW_VERSION}/" \
 
 echo "Updated manifest.json and .bumpversion.cfg to $NEW_VERSION"
 
+# --- Generate changelog entry ---
+LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+CHANGELOG="CHANGELOG.md"
+DATE=$(date +%Y-%m-%d)
+
+# Build the new entry
+{
+  echo "## [$NEW_VERSION] - $DATE"
+  echo ""
+  if [[ -n "$LAST_TAG" ]]; then
+    git log "${LAST_TAG}..HEAD" --pretty=format:"- %s" --no-merges
+  else
+    git log --pretty=format:"- %s" --no-merges
+  fi
+  echo ""
+  echo ""
+} > /tmp/changelog_entry.txt
+
+# Prepend to existing CHANGELOG.md or create it
+if [[ -f "$CHANGELOG" ]]; then
+  # Check if the file has the header already
+  if grep -q "^# Changelog" "$CHANGELOG"; then
+    # Insert after the header line
+    head -n 1 "$CHANGELOG" > /tmp/changelog_new.txt
+    echo "" >> /tmp/changelog_new.txt
+    cat /tmp/changelog_entry.txt >> /tmp/changelog_new.txt
+    tail -n +2 "$CHANGELOG" >> /tmp/changelog_new.txt
+  else
+    cat /tmp/changelog_entry.txt "$CHANGELOG" > /tmp/changelog_new.txt
+  fi
+else
+  {
+    echo "# Changelog"
+    echo ""
+    cat /tmp/changelog_entry.txt
+  } > /tmp/changelog_new.txt
+fi
+
+mv /tmp/changelog_new.txt "$CHANGELOG"
+echo "Updated $CHANGELOG"
+
 # --- Commit, tag, push ---
-# Stage everything — tracked changes and new untracked files
 git add .
 
 git commit -m "$MESSAGE"
