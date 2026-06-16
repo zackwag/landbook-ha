@@ -35,6 +35,11 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["diagnostics", "fan", "light", "number", "select", "sensor", "switch"]
 
 
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    hass.data.setdefault(DOMAIN, {})
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Landbook from a config entry."""
     bearer_token: str = entry.data[CONF_BEARER_TOKEN]
@@ -72,8 +77,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if uid not in accounts:
         # First device for this account — create the shared MQTT client
         def _token_refresher() -> str:
+            # Read the latest token from any entry for this account so we never
+            # refresh using a stale token after a previous successful refresh
+            current_token = bearer_token
+            for eid in list(accounts.get(uid, {}).get("entries", set())):
+                cfg_entry = hass.config_entries.async_get_entry(eid)
+                if cfg_entry:
+                    current_token = cfg_entry.data.get(CONF_BEARER_TOKEN, bearer_token)
+                    break
             try:
-                new_token = refresh_token(bearer_token, region)
+                new_token = refresh_token(current_token, region)
             except Exception as exc:
                 _LOGGER.warning("Token refresh failed for %s, triggering reauth: %s", uid, exc)
                 # Trigger reauth on every entry for this account
@@ -223,7 +236,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.warning("Could not fetch initial device attributes for %s: %s", dk, exc)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Reload when options change so temperature unit takes effect immediately
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+
     return True
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 def _coerce_value(val: object, data_type: str | None) -> object:
