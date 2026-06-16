@@ -55,6 +55,8 @@ CONF_FW_VERSION = "fw_version"
 CONF_TEMP_UNIT = "temperature_unit"
 TEMP_UNIT_F = "°F"
 TEMP_UNIT_C = "°C"
+CONF_SIGNAL_STRENGTH = "signal_strength_enabled"
+SIGNAL_STRENGTH_POLL_INTERVAL = 300  # seconds
 
 # TSL property data types
 DTYPE_BOOL = "BOOL"

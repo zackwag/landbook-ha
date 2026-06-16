@@ -9,12 +9,15 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import SIGNAL_STRENGTH_DECIBELS_MILLIWATT, UnitOfTemperature
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_DEVICE_NAME, CONF_FW_VERSION, CONF_PRODUCT_NAME, CONF_TEMP_UNIT, DOMAIN, TEMP_UNIT_C, TEMP_UNIT_F
+from .const import (
+    CONF_DEVICE_NAME, CONF_FW_VERSION, CONF_PRODUCT_NAME, CONF_SIGNAL_STRENGTH,
+    CONF_TEMP_UNIT, DOMAIN, TEMP_UNIT_C, TEMP_UNIT_F,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +33,13 @@ async def async_setup_entry(
     temp_prop = data.get("temperature_prop")
     if temp_prop:
         entities.append(LandbookTemperatureSensor(hass, entry, data, temp_prop))
+
+    signal_enabled = entry.options.get(
+        CONF_SIGNAL_STRENGTH,
+        entry.data.get(CONF_SIGNAL_STRENGTH, False),
+    )
+    if signal_enabled:
+        entities.append(LandbookSignalSensor(hass, entry, data))
 
     if entities:
         async_add_entities(entities, update_before_add=False)
@@ -116,3 +126,58 @@ class LandbookTemperatureSensor(SensorEntity):
                 self.async_write_ha_state()
             except (ValueError, TypeError):
                 _LOGGER.warning("Unexpected temperature value: %r", raw)
+
+
+class LandbookSignalSensor(SensorEntity):
+    """Wi-Fi signal strength sensor, polled from the REST API."""
+
+    _attr_should_poll = False
+    _attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = SIGNAL_STRENGTH_DECIBELS_MILLIWATT
+    _attr_entity_registry_enabled_default = True
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, data: dict) -> None:
+        self._hass = hass
+        self._entry = entry
+        self._data = data
+        self._attr_native_value: int | None = None
+
+        device_name: str = entry.data[CONF_DEVICE_NAME]
+        product_name: str = entry.data.get(CONF_PRODUCT_NAME, "")
+        fw_version: str | None = entry.data.get(CONF_FW_VERSION)
+        self._attr_unique_id = f"{entry.entry_id}_signal_strength"
+        self._attr_name = f"{device_name} Signal Strength"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=device_name,
+            manufacturer="Landbook",
+            model=product_name or None,
+            sw_version=fw_version,
+        )
+
+    @property
+    def available(self) -> bool:
+        return self._data.get("online", True)
+
+    async def async_added_to_hass(self) -> None:
+        raw = self._data.get("signal_strength")
+        if raw is not None:
+            self._attr_native_value = int(raw)
+
+        self.async_on_remove(
+            self.hass.bus.async_listen(
+                f"{DOMAIN}_state_update_{self._entry.entry_id}",
+                self._handle_state_update,
+            )
+        )
+
+    @callback
+    def _handle_state_update(self, event: Event) -> None:
+        changed: set[str] = event.data.get("changed_keys", set()) if event else set()
+        if changed and "signal_strength" not in changed:
+            return
+        raw = self._data.get("signal_strength")
+        if raw is not None:
+            self._attr_native_value = int(raw)
+            self.async_write_ha_state()

@@ -8,6 +8,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
+from homeassistant.helpers.event import async_track_time_interval
+from datetime import timedelta
+
 from .api import LandbookAPIError, async_get_device_attributes, async_get_tsl, refresh_token
 from .const import (
     CONF_BEARER_TOKEN,
@@ -15,11 +18,13 @@ from .const import (
     CONF_FW_VERSION,
     CONF_PRODUCT_KEY,
     CONF_REGION,
+    CONF_SIGNAL_STRENGTH,
     CONF_UID,
     DEFAULT_REGION,
     DISPLAY_LIGHT_HINTS,
     DOMAIN,
     REGIONS,
+    SIGNAL_STRENGTH_POLL_INTERVAL,
     TEMPERATURE_NAME_HINTS,
     OSCILLATION_NAME_HINTS,
     POWER_SORT_ORDER,
@@ -231,6 +236,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except LandbookAPIError as exc:
         _LOGGER.warning("Could not fetch initial device attributes for %s: %s", dk, exc)
 
+    # Start signal strength polling if the option is enabled
+    _setup_signal_polling(hass, entry, bearer_token, pk, dk, region)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Reload when options change so temperature unit takes effect immediately
@@ -241,6 +249,44 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+def _setup_signal_polling(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    bearer_token: str,
+    pk: str,
+    dk: str,
+    region: str,
+) -> None:
+    """Register a periodic poll for signal strength if the option is enabled."""
+    enabled = entry.options.get(
+        CONF_SIGNAL_STRENGTH,
+        entry.data.get(CONF_SIGNAL_STRENGTH, False),
+    )
+    if not enabled:
+        return
+
+    async def _poll(_now: object = None) -> None:
+        try:
+            current_token = entry.data.get(CONF_BEARER_TOKEN, bearer_token)
+            attrs = await async_get_device_attributes(current_token, pk, dk, region)
+            device_data = (attrs if isinstance(attrs, dict) else {}).get("deviceData") or {}
+            rssi = device_data.get("signalStrength")
+            if rssi is not None:
+                entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+                if entry_data is not None:
+                    entry_data["signal_strength"] = int(rssi)
+                    await _async_update_entities(hass, entry.entry_id, {"signal_strength"})
+        except Exception as exc:
+            _LOGGER.debug("Signal strength poll failed for %s: %s", dk, exc)
+
+    # Poll immediately then on interval
+    hass.async_create_task(_poll())
+    cancel = async_track_time_interval(
+        hass, _poll, timedelta(seconds=SIGNAL_STRENGTH_POLL_INTERVAL)
+    )
+    entry.async_on_unload(cancel)
 
 
 def _coerce_value(val: object, data_type: str | None) -> object:

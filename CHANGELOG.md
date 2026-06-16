@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.6] - 2026-06-16
+
+- Add opt-in Wi-Fi signal strength sensor with 5-minute polling
+
+
+
 ## [1.2.5] - 2026-06-16
 
 - Remove unused imports, fix hassfest CI pin, update info.md

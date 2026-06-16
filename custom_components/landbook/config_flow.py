@@ -19,6 +19,7 @@ from .const import (
     CONF_PRODUCT_KEY,
     CONF_PRODUCT_NAME,
     CONF_REGION,
+    CONF_SIGNAL_STRENGTH,
     CONF_TEMP_UNIT,
     CONF_UID,
     DEFAULT_REGION,
@@ -50,12 +51,17 @@ class LandbookOptionsFlow(config_entries.OptionsFlow):
             CONF_TEMP_UNIT,
             self.config_entry.data.get(CONF_TEMP_UNIT, TEMP_UNIT_F),
         )
+        current_signal = self.config_entry.options.get(
+            CONF_SIGNAL_STRENGTH,
+            self.config_entry.data.get(CONF_SIGNAL_STRENGTH, False),
+        )
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_MUTE_ON_COMMAND, default=current_mute): bool,
                     vol.Required(CONF_TEMP_UNIT, default=current_unit): vol.In([TEMP_UNIT_F, TEMP_UNIT_C]),
+                    vol.Required(CONF_SIGNAL_STRENGTH, default=current_signal): bool,
                 }
             ),
         )
