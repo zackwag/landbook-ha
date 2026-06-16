@@ -67,7 +67,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     extra_props = [p for p in properties if id(p) not in claimed]
 
     def _token_refresher() -> str:
-        new_token = refresh_token(bearer_token, region)
+        try:
+            new_token = refresh_token(bearer_token, region)
+        except Exception as exc:
+            _LOGGER.warning("Token refresh failed for %s, triggering reauth: %s", dk, exc)
+            hass.loop.call_soon_threadsafe(
+                hass.async_create_task,
+                _async_trigger_reauth(hass, entry),
+            )
+            raise
         hass.loop.call_soon_threadsafe(
             hass.async_create_task,
             _async_persist_token(hass, entry, new_token),
@@ -226,6 +234,10 @@ def _coerce_value(val: object, data_type: str | None) -> object:
         except (ValueError, TypeError):
             return val
     return val
+
+
+async def _async_trigger_reauth(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    entry.async_start_reauth(hass)
 
 
 async def _async_persist_token(hass: HomeAssistant, entry: ConfigEntry, token: str) -> None:

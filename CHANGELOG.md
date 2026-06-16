@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.13] - 2026-06-16
+
+- Add re-auth flow — prompts for password when session expires instead of silently failing
+
+
+
 ## [1.1.12] - 2026-06-16
 
 - Fix initial state type coercion — REST API strings now match native MQTT types

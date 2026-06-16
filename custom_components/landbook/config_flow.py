@@ -8,7 +8,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 
-from .api import LandbookAuthError, async_get_device_list, async_login
+from .api import LandbookAuthError, async_get_device_list, async_login, async_refresh_token
 from .const import (
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
@@ -101,6 +101,44 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(CONF_PASSWORD): str,
                 }
             ),
+            errors=errors,
+        )
+
+    async def async_step_reauth(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Re-authenticate when the stored token is no longer valid."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        errors: dict[str, str] = {}
+        reauth_entry = self._get_reauth_entry()
+
+        if user_input is not None:
+            try:
+                bearer_token, uid = await async_login(
+                    reauth_entry.data[CONF_EMAIL],
+                    user_input[CONF_PASSWORD],
+                    reauth_entry.data.get(CONF_REGION, DEFAULT_REGION),
+                )
+            except LandbookAuthError:
+                errors["base"] = "invalid_auth"
+            except Exception:  # noqa: BLE001
+                errors["base"] = "cannot_connect"
+            else:
+                self.hass.config_entries.async_update_entry(
+                    reauth_entry,
+                    data={**reauth_entry.data, CONF_BEARER_TOKEN: bearer_token, CONF_UID: uid},
+                )
+                await self.hass.config_entries.async_reload(reauth_entry.entry_id)
+                return self.async_abort(reason="reauth_successful")
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({vol.Required(CONF_PASSWORD): str}),
+            description_placeholders={"email": reauth_entry.data.get(CONF_EMAIL, "")},
             errors=errors,
         )
 
