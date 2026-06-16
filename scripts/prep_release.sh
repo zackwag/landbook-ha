@@ -51,7 +51,7 @@ confirm="${confirm:-Y}"
 [[ "$confirm" =~ ^[Yy]$ ]] || exit 0
 
 # --- Update version in manifest.json ---
-sed -i '' "\"s/\\\"version\\\": \\\"${CURRENT}\\\"/\\\"version\\\": \\\"${NEW_VERSION}\\\"/\"" \
+sed -i '' "s/\"version\": \"${CURRENT}\"/\"version\": \"${NEW_VERSION}\"/" \
   custom_components/landbook/manifest.json
 
 # --- Update version in .bumpversion.cfg ---

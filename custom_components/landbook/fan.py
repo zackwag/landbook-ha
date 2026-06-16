@@ -119,6 +119,8 @@ class LandbookFan(FanEntity):
             return None
         if self._current_speed_idx >= len(self._speed_values):
             return None
+        if self._is_auto_mode():
+            return None
         return round((self._current_speed_idx + 1) / len(self._speed_values) * 100)
 
     @property
@@ -208,7 +210,7 @@ class LandbookFan(FanEntity):
         self.async_write_ha_state()
 
     async def async_set_percentage(self, percentage: int) -> None:
-        if not self._speed_values:
+        if not self._speed_values or self._is_auto_mode():
             return
         idx = max(
             0,
@@ -305,6 +307,11 @@ class LandbookFan(FanEntity):
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
+
+    def _is_auto_mode(self) -> bool:
+        if not self._preset_modes or self._current_mode_idx >= len(self._preset_modes):
+            return False
+        return self._preset_modes[self._current_mode_idx].lower() == "auto"
 
     def _send(self, props: dict) -> None:
         self._data["mqtt_client"].send_write(
