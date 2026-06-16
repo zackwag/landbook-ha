@@ -1,14 +1,21 @@
 # Landbook — Home Assistant HACS Integration
 
-A HACS custom integration for fans (and other devices) running on the Landbook platform (Netprisma/Landecia cloud).
+A HACS custom integration for Landbook smart home devices, reverse-engineered from the Landbook iOS app (Netprisma/Landecia cloud). Supports real-time control and state via MQTT over TLS — no polling.
 
-## Features
+## Entities
 
-- **Config flow UI** — add devices through the HA interface, no YAML required
-- **Fan entity** — on/off, speed percentage, and preset modes auto-detected from the device's TSL model
-- **Number entities** — one per INT-typed writable property (e.g. timer, brightness)
-- **Select entities** — one per ENUM/BOOL writable property (e.g. mode, oscillation)
-- **Cloud-push** — state updates arrive via MQTT WebSocket; no polling
+For each device the integration creates:
+
+| Entity | Type | Description |
+|--------|------|-------------|
+| Fan | `fan` | Power, speed (percentage), mode (preset), oscillation |
+| Device Display | `light` | LED display on/off |
+| Device Sound | `switch` | Beep sounds on/off |
+| Temperature | `sensor` | Ambient temperature (°F, read-only) |
+| Mode | `select` | Operating mode (Normal / Natural / Sleep / Auto) |
+| Countdown | `number` | Timer in minutes |
+
+Additional entities are created automatically for any other writable properties discovered in the device's TSL model.
 
 ## Tested Devices
 
@@ -22,31 +29,23 @@ Other Landbook devices may work but have not been verified. If yours does, pleas
 
 ### HACS (recommended)
 
-1. Add this repo as a custom repository in HACS (type: **Integration**).
-2. Install **Landbook**.
-3. Restart Home Assistant.
-4. Go to **Settings → Devices & Services → Add Integration → Landbook**.
+1. In HA, go to **HACS → Integrations**
+2. Click the three-dot menu (top right) → **Custom repositories**
+3. Enter `https://github.com/zackwag/landbook-ha` and set category to **Integration**
+4. Click **Add**, then find and install **Landbook**
+5. Restart Home Assistant
 
 ### Manual
 
 Copy `custom_components/landbook/` into your HA `config/custom_components/` directory, then restart.
 
-## Configuration
+## Setup
 
-The config flow will ask for:
-
-| Field | Description |
-|-------|-------------|
-| Email | Your Landbook account email |
-| Password | Your account password |
-| Device | Pick from your linked devices |
-
-Credentials are stored in the HA config entry. The bearer token is refreshed on each HA restart.
-
-## Requirements
-
-- `paho-mqtt >= 2.0.0` (installed automatically)
-- `pycryptodome >= 3.0.0` (installed automatically)
+1. Go to **Settings → Devices & Services → Add Integration → Landbook**
+2. Select your region (US, EU, or CN)
+3. Enter your Landbook account email and password
+4. Select the device to add
+5. Optionally enable **Mute beep on command** (see Options below)
 
 ## Supported Regions
 
@@ -56,35 +55,47 @@ Credentials are stored in the HA config entry. The bearer token is refreshed on 
 | Europe | `iot-api.quecteleu.com` |
 | China | `iot-gateway.quectel.com` |
 
-Select your region during setup. EU and CN support is untested — if you try it, please open an issue to let us know if it works.
+EU and CN support is untested — if you try it, please open an issue to report whether it works.
 
 ## Options
 
+After setup, click **Configure** on the integration card to change:
+
 | Option | Default | Description |
 |--------|---------|-------------|
-| Mute beep when turning on or changing speed | Off | Sends a silent command after each fan command to suppress the confirmation beep. Does not change the device's persistent sound setting — if you want the fan permanently silent, turn off the **Device Sound** switch instead. |
+| Mute beep on command | Off | Suppresses the confirmation beep after each fan command. This does not change the device's persistent sound setting — to silence the fan permanently, use the **Device Sound** switch instead. |
 
-This option is set during initial setup and can be changed afterwards by clicking **Configure** on the integration card.
+## Requirements
+
+- `paho-mqtt >= 2.0.0` (installed automatically)
+- `pycryptodome >= 3.0.0` (installed automatically)
+- Home Assistant 2024.1.0 or newer
 
 ## Notes
 
-- Temperature is reported by the device whether it is on or off, and is refreshed on every HA restart or MQTT reconnect. There is no fixed polling interval — updates arrive when the device reports a state change.
-- The integration auto-detects the power switch and speed control from the device's TSL model. If detection is wrong, open an issue with your TSL dump.
-- Only one MQTT connection is created per account regardless of how many devices you add.
+- **Temperature** updates arrive when the device reports a state change — there is no fixed polling interval. Temperature shows as `unknown` while the fan is off.
+- **State on startup** — the integration requests a full state read from the device on every connect and reconnect, so entities reflect actual device state after a restart even if the device was already on.
+- **Device availability** — all entities go unavailable if the device drops off the Landbook cloud (MQTT `onl_` event). They recover automatically when the device reconnects.
+- The integration auto-detects power, speed, mode, and oscillation properties from the device's TSL model. If detection is wrong for your device, open an issue with a debug log.
+- One MQTT connection is maintained per account regardless of how many devices you add.
+
+## Troubleshooting
+
+Enable debug logging in `configuration.yaml`:
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.landbook: debug
+```
 
 ## Releasing a New Version
 
-Use the release script in `scripts/prep_release.sh`:
+Use the release script:
 
 ```bash
 ./scripts/prep_release.sh "Your commit message here"
 ```
 
-The script will:
-1. Read the current version from `manifest.json`
-2. Ask whether this is a **patch**, **minor**, or **major** bump and show you the resulting version
-3. Ask for confirmation before doing anything
-4. Update the version in `manifest.json` and `.bumpversion.cfg`
-5. Commit all staged changes, tag the commit `vX.Y.Z`, and push to `origin/main`
-
-The GitHub Actions release workflow picks up the tag and publishes a GitHub Release automatically. HACS notifies users of the update once the release is live.
+The script will prompt for patch / minor / major, show the resulting version, ask for confirmation, then commit, tag, and push. The GitHub Actions release workflow picks up the tag and publishes a GitHub Release automatically. HACS notifies users once the release is live.
