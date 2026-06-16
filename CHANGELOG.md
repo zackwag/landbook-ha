@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.15] - 2026-06-16
+
+- Update README — add countdown entity, Auto mode speed note, re-auth note, and mute option description
+
+
+
 ## [1.1.14] - 2026-06-16
 
 - Use TSL property name for light entity instead of hardcoded 'Device Display'

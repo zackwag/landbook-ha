@@ -13,7 +13,7 @@ For each device the integration creates:
 | Device Sound | `switch` | Beep sounds on/off |
 | Temperature | `sensor` | Ambient temperature (°F, read-only) |
 | Mode | `select` | Operating mode (Normal / Natural / Sleep / Auto) |
-| Countdown | `number` | Timer in minutes |
+| Countdown | `select` | Sleep timer (Off / 30 min / 60 min / …) |
 
 Additional entities are created automatically for any other writable properties discovered in the device's TSL model.
 
@@ -63,7 +63,7 @@ After setup, click **Configure** on the integration card to change:
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| Mute beep on command | Off | Suppresses the confirmation beep after each fan command. This does not change the device's persistent sound setting — to silence the fan permanently, use the **Device Sound** switch instead. |
+| Mute beep on command | Off | Suppresses the confirmation beep after each command. Does not permanently change the device sound setting — use the **Device Sound** switch to silence the fan permanently. |
 
 ## Requirements
 
@@ -73,9 +73,11 @@ After setup, click **Configure** on the integration card to change:
 
 ## Notes
 
+- **Fan speed in Auto mode** — speed shows as unknown while Auto is active. The device controls speed autonomously in this mode and does not push immediate updates, matching the behavior of the native Landbook app. Speed resumes showing when you switch back to another mode.
 - **Temperature** updates arrive when the device reports a state change — there is no fixed polling interval. Temperature shows as `unknown` while the fan is off.
 - **State on startup** — the integration requests a full state read from the device on every connect and reconnect, so entities reflect actual device state after a restart even if the device was already on.
 - **Device availability** — all entities go unavailable if the device drops off the Landbook cloud (MQTT `onl_` event). They recover automatically when the device reconnects.
+- **Session expiry** — if your Landbook session expires and cannot be renewed automatically, Home Assistant will prompt you to re-enter your password from the integration card. No need to remove and re-add the device.
 - The integration auto-detects power, speed, mode, and oscillation properties from the device's TSL model. If detection is wrong for your device, open an issue with a debug log.
 - One MQTT connection is maintained per account regardless of how many devices you add.
 
