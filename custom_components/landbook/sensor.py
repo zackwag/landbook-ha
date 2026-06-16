@@ -14,7 +14,7 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_DEVICE_NAME, CONF_FW_VERSION, CONF_PRODUCT_NAME, DOMAIN
+from .const import CONF_DEVICE_NAME, CONF_FW_VERSION, CONF_PRODUCT_NAME, CONF_TEMP_UNIT, DOMAIN, TEMP_UNIT_C, TEMP_UNIT_F
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,7 +41,6 @@ class LandbookTemperatureSensor(SensorEntity):
     _attr_should_poll = False
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_native_unit_of_measurement = UnitOfTemperature.FAHRENHEIT
 
     def __init__(
         self,
@@ -70,15 +69,31 @@ class LandbookTemperatureSensor(SensorEntity):
         )
 
     @property
+    def _use_celsius(self) -> bool:
+        unit = self._entry.options.get(
+            CONF_TEMP_UNIT,
+            self._entry.data.get(CONF_TEMP_UNIT, TEMP_UNIT_F),
+        )
+        return unit == TEMP_UNIT_C
+
+    @property
+    def native_unit_of_measurement(self) -> str:
+        return UnitOfTemperature.CELSIUS if self._use_celsius else UnitOfTemperature.FAHRENHEIT
+
+    @property
     def available(self) -> bool:
         return self._data.get("online", True)
 
+    def _convert(self, raw_f: float) -> float:
+        if self._use_celsius:
+            return round((raw_f - 32) * 5 / 9, 1)
+        return raw_f
+
     async def async_added_to_hass(self) -> None:
-        # Seed from initial state if already present
         raw = self._data["state"].get(self._code)
         if raw is not None:
             try:
-                self._attr_native_value = float(raw)
+                self._attr_native_value = self._convert(float(raw))
             except (ValueError, TypeError):
                 pass
 
@@ -97,7 +112,7 @@ class LandbookTemperatureSensor(SensorEntity):
         raw = self._data["state"].get(self._code)
         if raw is not None:
             try:
-                self._attr_native_value = float(raw)
+                self._attr_native_value = self._convert(float(raw))
                 self.async_write_ha_state()
             except (ValueError, TypeError):
                 _LOGGER.warning("Unexpected temperature value: %r", raw)

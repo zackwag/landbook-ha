@@ -64,6 +64,7 @@ After setup, click **Configure** on the integration card to change:
 | Option | Default | Description |
 |--------|---------|-------------|
 | Mute beep on command | Off | Suppresses the confirmation beep after each command. Does not permanently change the device sound setting — use the **Device Sound** switch to silence the fan permanently. |
+| Temperature unit | °F | The device always reports temperature in °F. Selecting °C converts the value for display in Home Assistant. |
 
 ## Requirements
 

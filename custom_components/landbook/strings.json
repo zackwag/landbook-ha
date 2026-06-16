@@ -50,10 +50,12 @@
       "init": {
         "title": "Landbook Options",
         "data": {
-          "mute_on_command": "Mute beep when turning on or changing speed"
+          "mute_on_command": "Mute beep when turning on or changing speed",
+          "temperature_unit": "Temperature unit"
         },
         "data_description": {
-          "mute_on_command": "Suppresses the confirmation beep after each command. Does not permanently change the device sound setting — use the Device Sound switch for that."
+          "mute_on_command": "Suppresses the confirmation beep after each command. Does not permanently change the device sound setting — use the Device Sound switch for that.",
+          "temperature_unit": "The device always reports temperature in °F. Selecting °C converts the value for display."
         }
       }
     }

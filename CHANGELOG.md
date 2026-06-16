@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.1] - 2026-06-16
+
+- Add temperature unit option — display in °F or °C via Configure
+
+
+
 ## [1.2.0] - 2026-06-16
 
 - Share a single MQTT connection across all devices on the same account

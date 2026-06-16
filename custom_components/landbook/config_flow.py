@@ -19,10 +19,13 @@ from .const import (
     CONF_PRODUCT_KEY,
     CONF_PRODUCT_NAME,
     CONF_REGION,
+    CONF_TEMP_UNIT,
     CONF_UID,
     DEFAULT_REGION,
     DOMAIN,
     REGIONS,
+    TEMP_UNIT_C,
+    TEMP_UNIT_F,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,14 +42,21 @@ class LandbookOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current = self.config_entry.options.get(
+        current_mute = self.config_entry.options.get(
             CONF_MUTE_ON_COMMAND,
             self.config_entry.data.get(CONF_MUTE_ON_COMMAND, False),
+        )
+        current_unit = self.config_entry.options.get(
+            CONF_TEMP_UNIT,
+            self.config_entry.data.get(CONF_TEMP_UNIT, TEMP_UNIT_F),
         )
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
-                {vol.Required(CONF_MUTE_ON_COMMAND, default=current): bool}
+                {
+                    vol.Required(CONF_MUTE_ON_COMMAND, default=current_mute): bool,
+                    vol.Required(CONF_TEMP_UNIT, default=current_unit): vol.In([TEMP_UNIT_F, TEMP_UNIT_C]),
+                }
             ),
         )
 
