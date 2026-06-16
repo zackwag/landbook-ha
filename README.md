@@ -84,6 +84,12 @@ After setup, click **Configure** on the integration card to change:
 
 ## Troubleshooting
 
+### Diagnostics
+
+On the device page in Home Assistant, click the three-dot menu → **Download diagnostics**. The report includes detected TSL properties, current device state, MQTT connection status, and firmware version. Credentials are automatically redacted. Attach this when opening an issue.
+
+### Debug logging
+
 Enable debug logging in `configuration.yaml`:
 
 ```yaml

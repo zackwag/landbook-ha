@@ -32,7 +32,7 @@ from .mqtt_client import LandbookMQTTClient
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["fan", "light", "number", "select", "sensor", "switch"]
+PLATFORMS = ["diagnostics", "fan", "light", "number", "select", "sensor", "switch"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

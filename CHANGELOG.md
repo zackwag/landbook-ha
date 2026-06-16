@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.2] - 2026-06-16
+
+- Add diagnostics platform — download device state and TSL info from the device page
+
+
+
 ## [1.2.1] - 2026-06-16
 
 - Add temperature unit option — display in °F or °C via Configure
