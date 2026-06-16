@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.12] - 2026-06-16
+
+- Fix initial state type coercion — REST API strings now match native MQTT types
+
+
+
 ## [1.1.11] - 2026-06-16
 
 - Persist refreshed bearer token to config entry so restarts use the latest token

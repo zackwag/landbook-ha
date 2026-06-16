@@ -185,7 +185,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 entry, data={**entry.data, CONF_FW_VERSION: fw_version}
             )
 
-        # Seed property state from customizeTslInfo list
+        # Seed property state from customizeTslInfo list, coercing string values
+        # to native types so entity handlers see the same types as MQTT bus_ messages
+        prop_types = {p["code"]: p["dataType"] for p in properties}
         tsl_info = (attrs if isinstance(attrs, dict) else {}).get("customizeTslInfo") or attrs
         initial_state: dict = {}
         if isinstance(tsl_info, list):
@@ -193,7 +195,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 code = item.get("resourceCode") or item.get("code")
                 val = item.get("resourceValce") or item.get("value")
                 if code is not None:
-                    initial_state[code] = val
+                    initial_state[code] = _coerce_value(val, prop_types.get(code))
         elif isinstance(tsl_info, dict):
             initial_state = tsl_info
         _LOGGER.debug("Initial state seeded for %s: %s", dk, initial_state)
@@ -203,6 +205,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+def _coerce_value(val: object, data_type: str | None) -> object:
+    """Coerce a string value from the REST API to the native type used by MQTT."""
+    if val is None:
+        return val
+    if data_type == "BOOL":
+        if isinstance(val, bool):
+            return val
+        return str(val).lower() == "true"
+    if data_type == "INT":
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return val
+    if data_type == "ENUM":
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return val
+    return val
 
 
 async def _async_persist_token(hass: HomeAssistant, entry: ConfigEntry, token: str) -> None:
