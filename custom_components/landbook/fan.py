@@ -12,7 +12,8 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_DEVICE_NAME, CONF_MUTE_ON_COMMAND, CONF_PRODUCT_NAME, DOMAIN
+from .const import (CONF_DEVICE_NAME, CONF_MUTE_ON_COMMAND, CONF_PRODUCT_NAME,
+                    DOMAIN)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -266,29 +267,29 @@ class LandbookFan(FanEntity):
 
         if self._speed_prop:
             code = self._speed_prop["code"]
-            if not changed or code in changed:
-                raw = shared.get(code)
-                if raw is not None:
-                    try:
-                        val = int(raw)
-                        if val in self._speed_values:
-                            self._current_speed_idx = self._speed_values.index(val)
-                            updated = True
-                    except (ValueError, TypeError):
-                        pass
+            # Always sync speed — Auto mode can change it without a direct command
+            raw = shared.get(code)
+            if raw is not None:
+                try:
+                    val = int(raw)
+                    if val in self._speed_values:
+                        self._current_speed_idx = self._speed_values.index(val)
+                        updated = True
+                except (ValueError, TypeError):
+                    pass
 
         if self._mode_prop:
             code = self._mode_prop["code"]
-            if not changed or code in changed:
-                raw = shared.get(code)
-                if raw is not None:
-                    try:
-                        val = int(raw)
-                        if val in self._mode_values:
-                            self._current_mode_idx = self._mode_values.index(val)
-                            updated = True
-                    except (ValueError, TypeError):
-                        pass
+            # Always sync mode — device may change it autonomously
+            raw = shared.get(code)
+            if raw is not None:
+                try:
+                    val = int(raw)
+                    if val in self._mode_values:
+                        self._current_mode_idx = self._mode_values.index(val)
+                        updated = True
+                except (ValueError, TypeError):
+                    pass
 
         if self._oscillation_prop:
             code = self._oscillation_prop["code"]
