@@ -67,7 +67,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     extra_props = [p for p in properties if id(p) not in claimed]
 
     def _token_refresher() -> str:
-        return refresh_token(bearer_token, region)
+        new_token = refresh_token(bearer_token, region)
+        hass.loop.call_soon_threadsafe(
+            hass.async_create_task,
+            _async_persist_token(hass, entry, new_token),
+        )
+        return new_token
 
     mqtt_client = LandbookMQTTClient(
         uid, bearer_token,
@@ -198,6 +203,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+async def _async_persist_token(hass: HomeAssistant, entry: ConfigEntry, token: str) -> None:
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, CONF_BEARER_TOKEN: token}
+    )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

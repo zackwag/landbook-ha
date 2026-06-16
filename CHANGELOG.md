@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.11] - 2026-06-16
+
+- Persist refreshed bearer token to config entry so restarts use the latest token
+
+
+
 ## [1.1.10] - 2026-06-16
 
 - Fix countdown timer showing raw option names — now shows human-readable minutes
