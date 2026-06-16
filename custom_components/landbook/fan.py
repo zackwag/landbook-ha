@@ -143,24 +143,18 @@ class LandbookFan(FanEntity):
     # Commands
     # ------------------------------------------------------------------
 
-    def _mute(self) -> None:
-        """Silence the beep then restore sound to its previous state."""
+    def _mute_props(self) -> dict:
+        """Return {sound_code: False} to bundle into a command, or {} if mute is disabled."""
         mute_enabled = self._entry.options.get(
             CONF_MUTE_ON_COMMAND,
             self._entry.data.get(CONF_MUTE_ON_COMMAND, False),
         )
         if not self._sound_prop or not mute_enabled:
-            return
-        # Only mute if sound is currently on — avoids unnecessary commands
+            return {}
         sound_on = bool(self._data["state"].get(self._sound_prop["code"], True))
         if not sound_on:
-            return
-        self._send({self._sound_prop["code"]: False})
-        # Restore sound after a short delay so the beep is suppressed but state persists
-        self.hass.loop.call_soon_threadsafe(
-            self.hass.async_create_task,
-            self._async_restore_sound(),
-        )
+            return {}
+        return {self._sound_prop["code"]: False}
 
     async def _async_restore_sound(self) -> None:
         await asyncio.sleep(1.5)
@@ -198,8 +192,10 @@ class LandbookFan(FanEntity):
             self._current_speed_idx = idx
 
         self._is_on = True
-        self._send(props)
-        self._mute()
+        mute = self._mute_props()
+        self._send({**props, **mute})
+        if mute:
+            self.hass.async_create_task(self._async_restore_sound())
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
@@ -220,8 +216,10 @@ class LandbookFan(FanEntity):
             ),
         )
         self._current_speed_idx = idx
-        self._send({self._speed_prop["code"]: self._speed_values[idx]})
-        self._mute()
+        mute = self._mute_props()
+        self._send({self._speed_prop["code"]: self._speed_values[idx], **mute})
+        if mute:
+            self.hass.async_create_task(self._async_restore_sound())
         self.async_write_ha_state()
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
@@ -229,8 +227,10 @@ class LandbookFan(FanEntity):
             return
         idx = self._preset_modes.index(preset_mode)
         self._current_mode_idx = idx
-        self._send({self._mode_prop["code"]: self._mode_values[idx]})
-        self._mute()
+        mute = self._mute_props()
+        self._send({self._mode_prop["code"]: self._mode_values[idx], **mute})
+        if mute:
+            self.hass.async_create_task(self._async_restore_sound())
         self.async_write_ha_state()
 
     async def async_oscillate(self, oscillating: bool) -> None:
