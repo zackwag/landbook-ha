@@ -1,0 +1,54 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Landbook — Zaloguj się",
+        "data": {
+          "region": "Region",
+          "email": "E-mail",
+          "password": "Hasło"
+        }
+      },
+      "pick_device": {
+        "title": "Wybierz urządzenie",
+        "data": {
+          "device": "Urządzenie",
+          "mute_on_command": "Wycisz sygnał dźwiękowy przy włączaniu lub zmianie prędkości"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Ponowne uwierzytelnienie Landbook",
+        "description": "Twoja sesja Landbook wygasła. Wprowadź hasło dla {email}, aby ponownie się połączyć.",
+        "data": {
+          "password": "Hasło"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Nieprawidłowy e-mail lub hasło.",
+      "cannot_connect": "Nie można połączyć się z interfejsem API Landbook.",
+      "device_not_found": "Wybrane urządzenie nie zostało znalezione."
+    },
+    "abort": {
+      "already_configured": "To urządzenie jest już skonfigurowane.",
+      "reauth_successful": "Ponowne uwierzytelnienie zakończyło się pomyślnie."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opcje Landbook",
+        "data": {
+          "mute_on_command": "Wycisz sygnał dźwiękowy przy włączaniu lub zmianie prędkości",
+          "temperature_unit": "Jednostka temperatury",
+          "signal_strength_enabled": "Pokaż czujnik siły sygnału Wi-Fi"
+        },
+        "data_description": {
+          "mute_on_command": "Wycisza sygnał potwierdzenia po każdej komendzie. Nie zmienia trwale ustawienia dźwięku urządzenia — użyj przełącznika Dźwięk urządzenia.",
+          "temperature_unit": "Urządzenie zawsze raportuje temperaturę w °F. Wybierając °C, wartość jest przeliczana do wyświetlenia.",
+          "signal_strength_enabled": "Dodaje czujnik siły sygnału Wi-Fi (dBm). Wymaga wywołania interfejsu API REST co 5 minut — włącz tylko wtedy, gdy jest potrzebne."
+        }
+      }
+    }
+  }
+}

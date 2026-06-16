@@ -1,0 +1,54 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Landbook — Entrar",
+        "data": {
+          "region": "Região",
+          "email": "E-mail",
+          "password": "Senha"
+        }
+      },
+      "pick_device": {
+        "title": "Selecionar dispositivo",
+        "data": {
+          "device": "Dispositivo",
+          "mute_on_command": "Silenciar bipe ao ligar ou alterar velocidade"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reautenticar Landbook",
+        "description": "Sua sessão do Landbook expirou. Insira a senha de {email} para reconectar.",
+        "data": {
+          "password": "Senha"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "E-mail ou senha inválidos.",
+      "cannot_connect": "Não foi possível conectar à API do Landbook.",
+      "device_not_found": "Dispositivo selecionado não encontrado."
+    },
+    "abort": {
+      "already_configured": "Este dispositivo já está configurado.",
+      "reauth_successful": "A reautenticação foi bem-sucedida."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opções do Landbook",
+        "data": {
+          "mute_on_command": "Silenciar bipe ao ligar ou alterar velocidade",
+          "temperature_unit": "Unidade de temperatura",
+          "signal_strength_enabled": "Mostrar sensor de intensidade do sinal Wi-Fi"
+        },
+        "data_description": {
+          "mute_on_command": "Suprime o bipe de confirmação após cada comando. Não altera permanentemente a configuração de som do dispositivo — use o interruptor de Som do dispositivo para isso.",
+          "temperature_unit": "O dispositivo sempre reporta a temperatura em °F. Selecionar °C converte o valor para exibição.",
+          "signal_strength_enabled": "Adiciona um sensor de intensidade do sinal Wi-Fi (dBm). Requer uma chamada à API REST a cada 5 minutos — ative somente se necessário."
+        }
+      }
+    }
+  }
+}

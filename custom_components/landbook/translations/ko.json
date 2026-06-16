@@ -1,0 +1,54 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Landbook — 로그인",
+        "data": {
+          "region": "지역",
+          "email": "이메일",
+          "password": "비밀번호"
+        }
+      },
+      "pick_device": {
+        "title": "장치 선택",
+        "data": {
+          "device": "장치",
+          "mute_on_command": "전원 켜기 또는 속도 변경 시 비프음 음소거"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Landbook 재인증",
+        "description": "Landbook 세션이 만료되었습니다. {email}의 비밀번호를 입력하여 재연결하세요.",
+        "data": {
+          "password": "비밀번호"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "이메일 또는 비밀번호가 올바르지 않습니다.",
+      "cannot_connect": "Landbook API에 연결할 수 없습니다.",
+      "device_not_found": "선택한 장치를 찾을 수 없습니다."
+    },
+    "abort": {
+      "already_configured": "이 장치는 이미 구성되어 있습니다.",
+      "reauth_successful": "재인증이 성공했습니다."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Landbook 옵션",
+        "data": {
+          "mute_on_command": "전원 켜기 또는 속도 변경 시 비프음 음소거",
+          "temperature_unit": "온도 단위",
+          "signal_strength_enabled": "Wi-Fi 신호 강도 센서 표시"
+        },
+        "data_description": {
+          "mute_on_command": "각 명령 후 확인 비프음을 억제합니다. 장치 사운드 설정을 영구적으로 변경하지 않습니다 — 장치 사운드 스위치를 사용하세요.",
+          "temperature_unit": "장치는 항상 °F로 온도를 보고합니다. °C를 선택하면 값이 표시용으로 변환됩니다.",
+          "signal_strength_enabled": "Wi-Fi 신호 강도 센서(dBm)를 추가합니다. 5분마다 REST API 호출이 필요합니다 — 필요한 경우에만 활성화하세요."
+        }
+      }
+    }
+  }
+}

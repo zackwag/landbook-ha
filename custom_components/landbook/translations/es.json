@@ -1,0 +1,54 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Landbook — Iniciar sesión",
+        "data": {
+          "region": "Región",
+          "email": "Correo electrónico",
+          "password": "Contraseña"
+        }
+      },
+      "pick_device": {
+        "title": "Seleccionar dispositivo",
+        "data": {
+          "device": "Dispositivo",
+          "mute_on_command": "Silenciar pitido al encender o cambiar velocidad"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Volver a autenticar Landbook",
+        "description": "Su sesión de Landbook ha expirado. Introduzca la contraseña de {email} para volver a conectarse.",
+        "data": {
+          "password": "Contraseña"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Correo electrónico o contraseña incorrectos.",
+      "cannot_connect": "No se puede conectar a la API de Landbook.",
+      "device_not_found": "El dispositivo seleccionado no se encontró."
+    },
+    "abort": {
+      "already_configured": "Este dispositivo ya está configurado.",
+      "reauth_successful": "La reautenticación fue exitosa."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opciones de Landbook",
+        "data": {
+          "mute_on_command": "Silenciar pitido al encender o cambiar velocidad",
+          "temperature_unit": "Unidad de temperatura",
+          "signal_strength_enabled": "Mostrar sensor de intensidad de señal Wi-Fi"
+        },
+        "data_description": {
+          "mute_on_command": "Suprime el pitido de confirmación después de cada comando. No cambia permanentemente la configuración de sonido del dispositivo; use el interruptor de sonido del dispositivo para eso.",
+          "temperature_unit": "El dispositivo siempre reporta la temperatura en °F. Al seleccionar °C, el valor se convierte para su visualización.",
+          "signal_strength_enabled": "Agrega un sensor de intensidad de señal Wi-Fi (dBm). Requiere una llamada a la API REST cada 5 minutos — actívelo solo si lo necesita."
+        }
+      }
+    }
+  }
+}

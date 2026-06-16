@@ -1,0 +1,54 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Landbook — Aanmelden",
+        "data": {
+          "region": "Regio",
+          "email": "E-mail",
+          "password": "Wachtwoord"
+        }
+      },
+      "pick_device": {
+        "title": "Apparaat selecteren",
+        "data": {
+          "device": "Apparaat",
+          "mute_on_command": "Pieptoon dempen bij inschakelen of snelheid wijzigen"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Landbook opnieuw verifiëren",
+        "description": "Uw Landbook-sessie is verlopen. Voer het wachtwoord in voor {email} om opnieuw verbinding te maken.",
+        "data": {
+          "password": "Wachtwoord"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Ongeldig e-mailadres of wachtwoord.",
+      "cannot_connect": "Kan geen verbinding maken met de Landbook API.",
+      "device_not_found": "Geselecteerd apparaat niet gevonden."
+    },
+    "abort": {
+      "already_configured": "Dit apparaat is al geconfigureerd.",
+      "reauth_successful": "Herverificatie was succesvol."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Landbook-opties",
+        "data": {
+          "mute_on_command": "Pieptoon dempen bij inschakelen of snelheid wijzigen",
+          "temperature_unit": "Temperatuureenheid",
+          "signal_strength_enabled": "Wi-Fi signaalsterktesensor weergeven"
+        },
+        "data_description": {
+          "mute_on_command": "Onderdrukt de bevestigingstoon na elk commando. Wijzigt de geluidsinstelling van het apparaat niet permanent — gebruik daarvoor de schakelaar Apparaatgeluid.",
+          "temperature_unit": "Het apparaat rapporteert de temperatuur altijd in °F. Bij selectie van °C wordt de waarde omgezet voor weergave.",
+          "signal_strength_enabled": "Voegt een Wi-Fi signaalsterktesensor (dBm) toe. Vereist elke 5 minuten een REST API-aanroep — schakel alleen in als u dit nodig hebt."
+        }
+      }
+    }
+  }
+}

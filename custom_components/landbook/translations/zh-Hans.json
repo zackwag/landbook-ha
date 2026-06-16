@@ -1,0 +1,54 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Landbook — 登录",
+        "data": {
+          "region": "地区",
+          "email": "电子邮件",
+          "password": "密码"
+        }
+      },
+      "pick_device": {
+        "title": "选择设备",
+        "data": {
+          "device": "设备",
+          "mute_on_command": "开机或更改速度时静音提示音"
+        }
+      },
+      "reauth_confirm": {
+        "title": "重新验证 Landbook",
+        "description": "您的 Landbook 会话已过期。请输入 {email} 的密码以重新连接。",
+        "data": {
+          "password": "密码"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "电子邮件或密码无效。",
+      "cannot_connect": "无法连接到 Landbook API。",
+      "device_not_found": "未找到所选设备。"
+    },
+    "abort": {
+      "already_configured": "此设备已配置。",
+      "reauth_successful": "重新验证成功。"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Landbook 选项",
+        "data": {
+          "mute_on_command": "开机或更改速度时静音提示音",
+          "temperature_unit": "温度单位",
+          "signal_strength_enabled": "显示 Wi-Fi 信号强度传感器"
+        },
+        "data_description": {
+          "mute_on_command": "在每次命令后抑制确认提示音。不会永久更改设备声音设置 — 请使用设备声音开关进行更改。",
+          "temperature_unit": "设备始终以 °F 报告温度。选择 °C 会将值转换后显示。",
+          "signal_strength_enabled": "添加 Wi-Fi 信号强度传感器（dBm）。每 5 分钟需要一次 REST API 调用 — 仅在需要时启用。"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Landbook — Logga in",
+        "data": {
+          "region": "Region",
+          "email": "E-post",
+          "password": "Lösenord"
+        }
+      },
+      "pick_device": {
+        "title": "Välj enhet",
+        "data": {
+          "device": "Enhet",
+          "mute_on_command": "Tysta pip vid på-slag eller hastighetsbyte"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Återautentisera Landbook",
+        "description": "Din Landbook-session har gått ut. Ange lösenordet för {email} för att återansluta.",
+        "data": {
+          "password": "Lösenord"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Ogiltig e-post eller lösenord.",
+      "cannot_connect": "Det går inte att ansluta till Landbook API.",
+      "device_not_found": "Vald enhet hittades inte."
+    },
+    "abort": {
+      "already_configured": "Den här enheten är redan konfigurerad.",
+      "reauth_successful": "Återautentiseringen lyckades."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Landbook-alternativ",
+        "data": {
+          "mute_on_command": "Tysta pip vid på-slag eller hastighetsbyte",
+          "temperature_unit": "Temperatureenhet",
+          "signal_strength_enabled": "Visa sensor för Wi-Fi-signalstyrka"
+        },
+        "data_description": {
+          "mute_on_command": "Undertrycker bekräftelsepipet efter varje kommando. Ändrar inte enhetens ljudinställning permanent — använd enhetens ljudbrytare för det.",
+          "temperature_unit": "Enheten rapporterar alltid temperaturen i °F. Om °C väljs konverteras värdet för visning.",
+          "signal_strength_enabled": "Lägger till en sensor för Wi-Fi-signalstyrka (dBm). Kräver ett REST API-anrop var 5:e minut — aktivera bara om det behövs."
+        }
+      }
+    }
+  }
+}
