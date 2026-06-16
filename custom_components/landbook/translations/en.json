@@ -15,20 +15,7 @@
           "device": "Device",
           "mute_on_command": "Mute beep when turning on or changing speed"
         }
-      }
-    },
-    "error": {
-      "invalid_auth": "Invalid email or password.",
-      "cannot_connect": "Unable to connect to the Landbook API.",
-      "device_not_found": "Selected device not found."
-    },
-    "abort": {
-      "already_configured": "This device is already configured.",
-      "reauth_successful": "Re-authentication was successful."
-    }
-  },
-  "reauth": {
-    "step": {
+      },
       "reauth_confirm": {
         "title": "Re-authenticate Landbook",
         "description": "Your Landbook session has expired. Enter the password for {email} to reconnect.",
@@ -38,10 +25,12 @@
       }
     },
     "error": {
-      "invalid_auth": "Invalid password.",
-      "cannot_connect": "Unable to connect to the Landbook API."
+      "invalid_auth": "Invalid email or password.",
+      "cannot_connect": "Unable to connect to the Landbook API.",
+      "device_not_found": "Selected device not found."
     },
     "abort": {
+      "already_configured": "This device is already configured.",
       "reauth_successful": "Re-authentication was successful."
     }
   },

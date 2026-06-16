@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.3] - 2026-06-16
+
+- Fix hassfest — move reauth_confirm step under config.step per HA schema
+
+
+
 ## [1.2.2] - 2026-06-16
 
 - Add diagnostics platform — download device state and TSL info from the device page
