@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.14] - 2026-06-16
+
+- Use TSL property name for light entity instead of hardcoded 'Device Display'
+
+
+
 ## [1.1.13] - 2026-06-16
 
 - Add re-auth flow — prompts for password when session expires instead of silently failing
