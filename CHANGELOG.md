@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.10] - 2026-06-17
+
+- Fix token validation error on setup retry by refreshing expired token automatically
+
+
+
 ## [1.2.9] - 2026-06-17
 
 - Fix invalid JSON in de.json translation (mismatched quote character)

@@ -12,7 +12,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_time_interval
 from datetime import timedelta
 
-from .api import LandbookAPIError, async_get_device_attributes, async_get_tsl, refresh_token
+from .api import LandbookAPIError, LandbookAuthError, async_get_device_attributes, async_get_tsl, async_refresh_token, refresh_token
 from .const import (
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
@@ -58,7 +58,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         properties = await async_get_tsl(bearer_token, pk, region)
     except LandbookAPIError as exc:
-        raise ConfigEntryNotReady(f"Could not fetch TSL model: {exc}") from exc
+        if "Token validation failed" in str(exc):
+            try:
+                bearer_token = await async_refresh_token(bearer_token, region)
+                hass.config_entries.async_update_entry(
+                    entry, data={**entry.data, CONF_BEARER_TOKEN: bearer_token}
+                )
+                properties = await async_get_tsl(bearer_token, pk, region)
+            except LandbookAuthError as auth_exc:
+                entry.async_start_reauth(hass)
+                raise ConfigEntryNotReady(f"Token expired and refresh failed: {auth_exc}") from auth_exc
+            except LandbookAPIError as retry_exc:
+                raise ConfigEntryNotReady(f"Could not fetch TSL model after token refresh: {retry_exc}") from retry_exc
+        else:
+            raise ConfigEntryNotReady(f"Could not fetch TSL model: {exc}") from exc
 
     power_prop        = _find_power_prop(properties)
     speed_prop        = _find_speed_prop(properties, power_prop)
