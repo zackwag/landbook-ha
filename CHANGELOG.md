@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.9] - 2026-06-17
+
+- Fix invalid JSON in de.json translation (mismatched quote character)
+
+
+
 ## [1.2.8] - 2026-06-16
 
 - Add translations for 12 languages
