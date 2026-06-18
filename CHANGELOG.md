@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.11] - 2026-06-18
+
+- Fix spurious reauth prompt on startup by only triggering reauth on credential rejection
+
+
+
 ## [1.2.10] - 2026-06-17
 
 - Fix token validation error on setup retry by refreshing expired token automatically

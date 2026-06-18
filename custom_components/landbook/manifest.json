@@ -9,5 +9,5 @@
   "issue_tracker": "https://github.com/zackwag/landbook-ha/issues",
   "quality_scale": "custom",
   "requirements": ["paho-mqtt>=2.0.0", "pycryptodome>=3.0.0"],
-  "version": "1.2.10"
+  "version": "1.2.11"
 }

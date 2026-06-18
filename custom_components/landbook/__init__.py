@@ -66,7 +66,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
                 properties = await async_get_tsl(bearer_token, pk, region)
             except LandbookAuthError as auth_exc:
-                entry.async_start_reauth(hass)
+                if "rejected" in str(auth_exc).lower():
+                    entry.async_start_reauth(hass)
                 raise ConfigEntryNotReady(f"Token expired and refresh failed: {auth_exc}") from auth_exc
             except LandbookAPIError as retry_exc:
                 raise ConfigEntryNotReady(f"Could not fetch TSL model after token refresh: {retry_exc}") from retry_exc
