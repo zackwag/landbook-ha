@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.13] - 2026-06-23
+
+- Fix spurious reauth on network errors during token refresh
+
+
+
 ## [1.2.12] - 2026-06-23
 
 - Convert countdown from dropdown to select with hour labels

@@ -144,7 +144,7 @@ def refresh_token(bearer_token: str, region: str = DEFAULT_REGION) -> str:
     try:
         resp = json.loads(urllib.request.urlopen(req).read())
     except Exception as exc:
-        raise LandbookAuthError(f"Token refresh failed: {exc}") from exc
+        raise LandbookAPIError(f"Token refresh request failed: {exc}") from exc
 
     if resp.get("code") != 200 or "data" not in resp:
         raise LandbookAuthError(f"Token refresh rejected: {resp.get('msg', 'unknown error')}")

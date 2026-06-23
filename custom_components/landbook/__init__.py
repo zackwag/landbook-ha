@@ -106,9 +106,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     break
             try:
                 new_token = refresh_token(current_token, region)
-            except Exception as exc:
-                _LOGGER.warning("Token refresh failed for %s, triggering reauth: %s", uid, exc)
-                # Trigger reauth on every entry for this account
+            except LandbookAuthError as exc:
+                _LOGGER.warning("Token rejected for %s, triggering reauth: %s", uid, exc)
                 for eid in list(accounts.get(uid, {}).get("entries", set())):
                     cfg_entry = hass.config_entries.async_get_entry(eid)
                     if cfg_entry:
@@ -116,6 +115,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             hass.async_create_task,
                             _async_trigger_reauth(hass, cfg_entry),
                         )
+                raise
+            except Exception as exc:
+                _LOGGER.warning("Token refresh failed for %s (network?), will retry: %s", uid, exc)
                 raise
             hass.loop.call_soon_threadsafe(
                 hass.async_create_task,
