@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.12] - 2026-06-23
+
+- Convert countdown from dropdown to select with hour labels
+
+
+
 ## [1.2.11] - 2026-06-18
 
 - Fix spurious reauth prompt on startup by only triggering reauth on credential rejection

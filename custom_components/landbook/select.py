@@ -14,10 +14,10 @@ from .const import CONF_DEVICE_NAME, CONF_FW_VERSION, CONF_PRODUCT_NAME, DISPLAY
 _LOGGER = logging.getLogger(__name__)
 
 
-def _countdown_label(minutes: int) -> str:
-    if minutes == 0:
-        return "Off"
-    return f"{minutes} min"
+def _countdown_label(hours: int) -> str:
+    if hours == 0:
+        return "Cancel"
+    return f"{hours} h"
 
 
 async def async_setup_entry(
@@ -37,13 +37,12 @@ async def async_setup_entry(
         for prop in data["extra_props"]
         if prop["dataType"] == "ENUM"
     ]
-
     if entities:
         async_add_entities(entities, update_before_add=False)
 
 
 class LandbookCountdown(SelectEntity):
-    """Select entity for the countdown timer, with human-readable minute labels."""
+    """Select entity for the countdown timer."""
 
     _attr_should_poll = False
     _attr_icon = "mdi:timer-outline"
@@ -60,7 +59,6 @@ class LandbookCountdown(SelectEntity):
         self._data = data
         self._code: str = prop["code"]
 
-        # Map "X min" / "Off" -> raw int value
         self._options_map: dict[str, int] = {
             _countdown_label(int(s["value"])): int(s["value"])
             for s in (prop.get("specs") or [])
