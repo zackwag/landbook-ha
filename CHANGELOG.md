@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.14] - 2026-06-25
+
+- Stop MQTT reconnect loop when reauth is triggered
+
+
+
 ## [1.2.13] - 2026-06-23
 
 - Fix spurious reauth on network errors during token refresh

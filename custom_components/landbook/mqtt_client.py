@@ -32,6 +32,7 @@ class LandbookMQTTClient:
         self._client: mqtt.Client | None = None
         self._connected = False
         self._shutting_down = False
+        self._reauth_pending = False
         self._msg_counter = 1000
         self._reconnect_timer: threading.Timer | None = None
 
@@ -75,6 +76,13 @@ class LandbookMQTTClient:
     def update_token(self, bearer_token: str) -> None:
         """Update the stored token (e.g. after a refresh)."""
         self._bearer_token = bearer_token
+
+    def halt_reconnects(self) -> None:
+        """Stop all reconnect attempts (e.g. while reauth is pending)."""
+        self._reauth_pending = True
+        if self._reconnect_timer:
+            self._reconnect_timer.cancel()
+            self._reconnect_timer = None
 
     def disconnect(self) -> None:
         self._shutting_down = True
@@ -170,6 +178,9 @@ class LandbookMQTTClient:
         if self._shutting_down:
             _LOGGER.debug("Landbook MQTT disconnected cleanly (unload)")
             return
+        if self._reauth_pending:
+            _LOGGER.debug("Landbook MQTT disconnected while reauth pending — not reconnecting")
+            return
         _LOGGER.warning("Landbook MQTT disconnected: %s — scheduling reconnect", reason_code)
         self._schedule_reconnect(delay=5)
 
@@ -181,6 +192,8 @@ class LandbookMQTTClient:
         self._reconnect_timer.start()
 
     def _reconnect(self) -> None:
+        if self._reauth_pending:
+            return
         _LOGGER.info("Landbook MQTT attempting reconnect")
         try:
             if self._token_refresher:
@@ -188,6 +201,8 @@ class LandbookMQTTClient:
                 _LOGGER.debug("Token refreshed before reconnect")
         except Exception as exc:
             _LOGGER.warning("Token refresh failed, reconnecting with old token: %s", exc)
+        if self._reauth_pending:
+            return
         try:
             if self._client:
                 self._client.loop_stop()

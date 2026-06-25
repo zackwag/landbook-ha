@@ -108,6 +108,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 new_token = refresh_token(current_token, region)
             except LandbookAuthError as exc:
                 _LOGGER.warning("Token rejected for %s, triggering reauth: %s", uid, exc)
+                accounts.get(uid, {}).get("client") and accounts[uid]["client"].halt_reconnects()
                 for eid in list(accounts.get(uid, {}).get("entries", set())):
                     cfg_entry = hass.config_entries.async_get_entry(eid)
                     if cfg_entry:
