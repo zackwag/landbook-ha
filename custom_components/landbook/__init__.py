@@ -35,7 +35,7 @@ from .mqtt_client import LandbookMQTTClient
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["diagnostics", "fan", "light", "number", "select", "sensor", "switch"]
+PLATFORMS = ["fan", "light", "number", "select", "sensor", "switch"]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 

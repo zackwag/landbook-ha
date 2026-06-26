@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.15] - 2026-06-26
+
+- Fix diagnostics platform error on startup
+
+
+
 ## [1.2.14] - 2026-06-25
 
 - Stop MQTT reconnect loop when reauth is triggered
