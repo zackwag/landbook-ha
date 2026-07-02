@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.2] - 2026-07-02
+
+- Fix restore state not applying to device — send after delay
+
+
+
 ## [1.3.1] - 2026-07-02
 
 - Fix restore_state label showing raw key in options UI

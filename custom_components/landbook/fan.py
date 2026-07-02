@@ -1,6 +1,7 @@
 """Fan entity for Landbook integration."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 from typing import Any
@@ -135,6 +136,10 @@ class LandbookFan(FanEntity):
     # Commands
     # ------------------------------------------------------------------
 
+    async def _async_restore_preferred(self, props: dict) -> None:
+        await asyncio.sleep(1.5)
+        self._send(props)
+
     def _restore_state_enabled(self) -> bool:
         return bool(self._entry.options.get(
             CONF_RESTORE_STATE,
@@ -166,14 +171,15 @@ class LandbookFan(FanEntity):
             props[self._speed_prop["code"]] = self._speed_values[idx]
             self._current_speed_idx = idx
 
-        if self._restore_state_enabled():
-            preferred = self._data.get("preferred_state", {})
-            for code, val in preferred.items():
-                if code not in props:
-                    props[code] = val
-
         self._is_on = True
         self._send(props)
+        if self._restore_state_enabled():
+            preferred = {
+                k: v for k, v in self._data.get("preferred_state", {}).items()
+                if k not in props
+            }
+            if preferred:
+                self.hass.async_create_task(self._async_restore_preferred(preferred))
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
