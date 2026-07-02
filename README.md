@@ -13,7 +13,7 @@ For each device the integration creates:
 | Device Sound | `switch` | Beep sounds on/off |
 | Temperature | `sensor` | Ambient temperature (°F, read-only) |
 | Mode | `select` | Operating mode (Normal / Natural / Sleep / Auto) |
-| Countdown | `select` | Sleep timer (Off / 30 min / 60 min / …) |
+| Countdown | `select` | Sleep timer (Cancel / 1 h / 2 h / … / 12 h) |
 
 Additional entities are created automatically for any other writable properties discovered in the device's TSL model.
 
@@ -45,7 +45,7 @@ Copy `custom_components/landbook/` into your HA `config/custom_components/` dire
 2. Select your region (US, EU, or CN)
 3. Enter your Landbook account email and password
 4. Select the device to add
-5. Optionally enable **Mute beep on command** (see Options below)
+5. Optionally enable **Restore state when turned on** (see Options below)
 
 ## Supported Regions
 
@@ -63,7 +63,7 @@ After setup, click **Configure** on the integration card to change:
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| Mute beep on command | Off | Suppresses the confirmation beep after each command. Does not permanently change the device sound setting — use the **Device Sound** switch to silence the fan permanently. |
+| Restore state when turned on | Off | When the fan is turned on, restores the previous speed, mode, oscillation, sound, and display settings. State is saved when the fan turns off (via HA, the app, or the physical button). Disabled by default — enable if you find the device resets to unwanted defaults on each power cycle. |
 | Temperature unit | °F | The device always reports temperature in °F. Selecting °C converts the value for display in Home Assistant. |
 | Show Wi-Fi signal strength sensor | Off | Adds a signal strength sensor (dBm). **Requires a REST API call every 5 minutes** — this is additional polling on top of the normal push-based connection. Enable only if you need it. |
 
@@ -76,7 +76,9 @@ After setup, click **Configure** on the integration card to change:
 ## Notes
 
 - **Fan speed in Auto mode** — speed shows as unknown while Auto is active. The device controls speed autonomously in this mode and does not push immediate updates, matching the behavior of the native Landbook app. Speed resumes showing when you switch back to another mode.
-- **Temperature** updates arrive when the device reports a state change — there is no fixed polling interval. Temperature shows as `unknown` while the fan is off.
+- **Temperature** updates arrive when the device reports a state change — there is no fixed polling interval.
+- **Fan controls availability** — speed, mode, oscillation, countdown, sound, and display entities are marked unavailable while the fan is off, matching the behavior of the Landbook app. Temperature and signal strength remain available regardless of fan state.
+- **Restore state** — when enabled, turning the fan on via any method (HA, app, or physical button) re-applies the settings that were active when it was last turned off. This works around the device resetting to default speed, mode, and sound on every power cycle.
 - **State on startup** — the integration requests a full state read from the device on every connect and reconnect, so entities reflect actual device state after a restart even if the device was already on.
 - **Device availability** — all entities go unavailable if the device drops off the Landbook cloud (MQTT `onl_` event). They recover automatically when the device reconnects.
 - **Session expiry** — if your Landbook session expires and cannot be renewed automatically, Home Assistant will prompt you to re-enter your password from the integration card. No need to remove and re-add the device.
