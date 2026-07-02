@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.1] - 2026-07-02
+
+- Fix restore_state label showing raw key in options UI
+
+
+
 ## [1.3.0] - 2026-07-02
 
 - Add restore state on power-on, replace mute option, gate controls when fan is off

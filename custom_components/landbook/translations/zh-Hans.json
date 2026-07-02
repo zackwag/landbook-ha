@@ -13,7 +13,7 @@
         "title": "选择设备",
         "data": {
           "device": "设备",
-          "mute_on_command": "开机或更改速度时静音提示音"
+          "restore_state": "开机或更改速度时静音提示音"
         }
       },
       "reauth_confirm": {
@@ -39,12 +39,12 @@
       "init": {
         "title": "Landbook 选项",
         "data": {
-          "mute_on_command": "开机或更改速度时静音提示音",
+          "restore_state": "开机或更改速度时静音提示音",
           "temperature_unit": "温度单位",
           "signal_strength_enabled": "显示 Wi-Fi 信号强度传感器"
         },
         "data_description": {
-          "mute_on_command": "在每次命令后抑制确认提示音。不会永久更改设备声音设置 — 请使用设备声音开关进行更改。",
+          "restore_state": "在每次命令后抑制确认提示音。不会永久更改设备声音设置 — 请使用设备声音开关进行更改。",
           "temperature_unit": "设备始终以 °F 报告温度。选择 °C 会将值转换后显示。",
           "signal_strength_enabled": "添加 Wi-Fi 信号强度传感器（dBm）。每 5 分钟需要一次 REST API 调用 — 仅在需要时启用。"
         }
