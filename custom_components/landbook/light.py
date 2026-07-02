@@ -67,7 +67,12 @@ class LandbookLight(LightEntity):
 
     @property
     def available(self) -> bool:
-        return self._data.get("online", True)
+        if not self._data.get("online", True):
+            return False
+        power_prop = self._data.get("power_prop")
+        if power_prop:
+            return bool(self._data["state"].get(power_prop["code"], False))
+        return True
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         self._attr_is_on = True
@@ -101,9 +106,11 @@ class LandbookLight(LightEntity):
     @callback
     def _handle_state_update(self, event: Event) -> None:
         changed: set[str] = event.data.get("changed_keys", set()) if event else set()
-        if changed and self._code not in changed:
+        power_prop = self._data.get("power_prop")
+        power_code = power_prop["code"] if power_prop else None
+        if changed and self._code not in changed and power_code not in changed:
             return
         raw = self._data["state"].get(self._code)
         if raw is not None:
             self._attr_is_on = bool(raw)
-            self.async_write_ha_state()
+        self.async_write_ha_state()

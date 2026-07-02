@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.16] - 2026-07-02
+
+- Gate fan controls unavailable when fan is off
+
+
+
 ## [1.2.15] - 2026-06-26
 
 - Fix diagnostics platform error on startup

@@ -82,7 +82,12 @@ class LandbookCountdown(SelectEntity):
 
     @property
     def available(self) -> bool:
-        return self._data.get("online", True)
+        if not self._data.get("online", True):
+            return False
+        power_prop = self._data.get("power_prop")
+        if power_prop:
+            return bool(self._data["state"].get(power_prop["code"], False))
+        return True
 
     async def async_select_option(self, option: str) -> None:
         if option not in self._options_map:
@@ -108,9 +113,14 @@ class LandbookCountdown(SelectEntity):
     @callback
     def _handle_state_update(self, event: Event) -> None:
         changed: set[str] = event.data.get("changed_keys", set()) if event else set()
-        if changed and self._code not in changed:
+        power_prop = self._data.get("power_prop")
+        power_code = power_prop["code"] if power_prop else None
+        if changed and self._code not in changed and power_code not in changed:
             return
         raw = self._data["state"].get(self._code)
+        if raw is None and power_code in changed:
+            self.async_write_ha_state()
+            return
         if raw is None:
             return
         try:
@@ -166,7 +176,12 @@ class LandbookSelect(SelectEntity):
 
     @property
     def available(self) -> bool:
-        return self._data.get("online", True)
+        if not self._data.get("online", True):
+            return False
+        power_prop = self._data.get("power_prop")
+        if power_prop:
+            return bool(self._data["state"].get(power_prop["code"], False))
+        return True
 
     async def async_select_option(self, option: str) -> None:
         if option not in self._options_map:
@@ -192,10 +207,13 @@ class LandbookSelect(SelectEntity):
     @callback
     def _handle_state_update(self, event: Event) -> None:
         changed: set[str] = event.data.get("changed_keys", set()) if event else set()
-        if changed and self._code not in changed:
+        power_prop = self._data.get("power_prop")
+        power_code = power_prop["code"] if power_prop else None
+        if changed and self._code not in changed and power_code not in changed:
             return
         raw = self._data["state"].get(self._code)
         if raw is None:
+            self.async_write_ha_state()
             return
         try:
             raw_int = int(raw)
