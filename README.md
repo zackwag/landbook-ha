@@ -81,7 +81,7 @@ After setup, click **Configure** on the integration card to change:
 - **Restore state** — when enabled, turning the fan on via any method (HA, app, or physical button) re-applies the settings that were active when it was last turned off. This works around the device resetting to default speed, mode, and sound on every power cycle.
 - **State on startup** — the integration requests a full state read from the device on every connect and reconnect, so entities reflect actual device state after a restart even if the device was already on.
 - **Device availability** — all entities go unavailable if the device drops off the Landbook cloud (MQTT `onl_` event). They recover automatically when the device reconnects.
-- **Session expiry** — if your Landbook session expires and cannot be renewed automatically, Home Assistant will prompt you to re-enter your password from the integration card. No need to remove and re-add the device.
+- **Session expiry** — the access token (2-hour lifetime) is renewed automatically in the background using the account's refresh token, both proactively on a timer and whenever a reconnect or API call needs it. If the refresh token itself has expired or been revoked, Home Assistant will prompt you to re-enter your password from the integration card. No need to remove and re-add the device.
 - The integration auto-detects power, speed, mode, and oscillation properties from the device's TSL model. If detection is wrong for your device, open an issue with a debug log.
 - One MQTT connection is maintained per account regardless of how many devices you add. All devices on the same account share a single connection — adding a second device does not open a second connection to the broker.
 

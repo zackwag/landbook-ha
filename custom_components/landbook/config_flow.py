@@ -17,6 +17,7 @@ from .const import (
     CONF_PASSWORD,
     CONF_PRODUCT_KEY,
     CONF_PRODUCT_NAME,
+    CONF_REFRESH_TOKEN,
     CONF_REGION,
     CONF_RESTORE_STATE,
     CONF_SIGNAL_STRENGTH,
@@ -79,6 +80,7 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self._email: str = ""
         self._bearer_token: str = ""
+        self._refresh_token: str = ""
         self._uid: str = ""
         self._region: str = DEFAULT_REGION
         self._devices: list[dict] = []
@@ -94,7 +96,7 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             password = user_input[CONF_PASSWORD]
             region = user_input[CONF_REGION]
             try:
-                bearer_token, uid = await async_login(email, password, region)
+                bearer_token, uid, refresh_token = await async_login(email, password, region)
             except LandbookAuthError as exc:
                 _LOGGER.error("Landbook login error: %s", exc)
                 errors["base"] = "invalid_auth"
@@ -104,6 +106,7 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 self._email = email
                 self._bearer_token = bearer_token
+                self._refresh_token = refresh_token
                 self._uid = uid
                 self._region = region
                 return await self.async_step_pick_device()
@@ -134,7 +137,7 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             try:
-                bearer_token, uid = await async_login(
+                bearer_token, uid, refresh_token = await async_login(
                     reauth_entry.data[CONF_EMAIL],
                     user_input[CONF_PASSWORD],
                     reauth_entry.data.get(CONF_REGION, DEFAULT_REGION),
@@ -146,7 +149,12 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 self.hass.config_entries.async_update_entry(
                     reauth_entry,
-                    data={**reauth_entry.data, CONF_BEARER_TOKEN: bearer_token, CONF_UID: uid},
+                    data={
+                        **reauth_entry.data,
+                        CONF_BEARER_TOKEN: bearer_token,
+                        CONF_REFRESH_TOKEN: refresh_token,
+                        CONF_UID: uid,
+                    },
                 )
                 await self.hass.config_entries.async_reload(reauth_entry.entry_id)
                 return self.async_abort(reason="reauth_successful")
@@ -189,6 +197,7 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_REGION: self._region,
                         CONF_EMAIL: self._email,
                         CONF_BEARER_TOKEN: self._bearer_token,
+                        CONF_REFRESH_TOKEN: self._refresh_token,
                         CONF_UID: self._uid,
                         CONF_DEVICE_KEY: device["deviceKey"],
                         CONF_PRODUCT_KEY: device["productKey"],
