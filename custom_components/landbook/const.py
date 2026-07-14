@@ -45,6 +45,7 @@ DEFAULT_REGION = "us"
 CONF_EMAIL = "email"
 CONF_PASSWORD = "password"
 CONF_BEARER_TOKEN = "bearer_token"
+CONF_REFRESH_TOKEN = "refresh_token"
 CONF_UID = "uid"
 CONF_DEVICE_KEY = "device_key"
 CONF_PRODUCT_KEY = "product_key"
@@ -58,6 +59,11 @@ TEMP_UNIT_F = "°F"
 TEMP_UNIT_C = "°C"
 CONF_SIGNAL_STRENGTH = "signal_strength_enabled"
 SIGNAL_STRENGTH_POLL_INTERVAL = 300  # seconds
+
+# Access tokens are issued with a 2-hour TTL (JWT exp - iat). Refresh well
+# before that so the shared MQTT connection and REST calls never see an
+# expired access token under normal operation.
+PROACTIVE_TOKEN_REFRESH_INTERVAL = 5400  # seconds (90 minutes)
 
 # TSL property data types
 DTYPE_BOOL = "BOOL"

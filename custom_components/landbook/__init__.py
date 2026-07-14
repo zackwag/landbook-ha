@@ -19,6 +19,7 @@ from .const import (
     CONF_FW_VERSION,
     CONF_MUTE_ON_COMMAND,
     CONF_PRODUCT_KEY,
+    CONF_REFRESH_TOKEN,
     CONF_REGION,
     CONF_RESTORE_STATE,
     CONF_SIGNAL_STRENGTH,
@@ -26,6 +27,7 @@ from .const import (
     DEFAULT_REGION,
     DISPLAY_LIGHT_HINTS,
     DOMAIN,
+    PROACTIVE_TOKEN_REFRESH_INTERVAL,
     REGIONS,
     SIGNAL_STRENGTH_POLL_INTERVAL,
     TEMPERATURE_NAME_HINTS,
@@ -56,6 +58,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.config_entries.async_update_entry(entry, data=new_data)
 
     bearer_token: str = entry.data[CONF_BEARER_TOKEN]
+    # Entries created before the refresh-token fix have no refresh token on file.
+    # They can't be silently upgraded — the old access token alone can't obtain
+    # one — so treat that case the same as a rejected refresh: ask for reauth.
+    refresh_tok: str = entry.data.get(CONF_REFRESH_TOKEN, "")
     uid: str = entry.data[CONF_UID]
     pk: str = entry.data[CONF_PRODUCT_KEY]
     dk: str = entry.data[CONF_DEVICE_KEY]
@@ -67,10 +73,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         properties = await async_get_tsl(bearer_token, pk, region)
     except LandbookAPIError as exc:
         if "Token validation failed" in str(exc):
+            if not refresh_tok:
+                entry.async_start_reauth(hass)
+                raise ConfigEntryNotReady(
+                    "Token expired and no refresh token on file (pre-upgrade entry) — reauth required"
+                )
             try:
-                bearer_token = await async_refresh_token(bearer_token, region)
+                bearer_token, refresh_tok = await async_refresh_token(bearer_token, refresh_tok, region)
                 hass.config_entries.async_update_entry(
-                    entry, data={**entry.data, CONF_BEARER_TOKEN: bearer_token}
+                    entry,
+                    data={
+                        **entry.data,
+                        CONF_BEARER_TOKEN: bearer_token,
+                        CONF_REFRESH_TOKEN: refresh_tok,
+                    },
                 )
                 properties = await async_get_tsl(bearer_token, pk, region)
             except LandbookAuthError as auth_exc:
@@ -107,13 +123,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Read the latest token from any entry for this account so we never
             # refresh using a stale token after a previous successful refresh
             current_token = bearer_token
+            current_refresh = refresh_tok
             for eid in list(accounts.get(uid, {}).get("entries", set())):
                 cfg_entry = hass.config_entries.async_get_entry(eid)
                 if cfg_entry:
                     current_token = cfg_entry.data.get(CONF_BEARER_TOKEN, bearer_token)
+                    current_refresh = cfg_entry.data.get(CONF_REFRESH_TOKEN, refresh_tok)
                     break
             try:
-                new_token = refresh_token(current_token, region)
+                if not current_refresh:
+                    raise LandbookAuthError("No refresh token on file (pre-upgrade entry) — reauth required")
+                new_token, new_refresh = refresh_token(current_token, current_refresh, region)
             except LandbookAuthError as exc:
                 _LOGGER.warning("Token rejected for %s, triggering reauth: %s", uid, exc)
                 accounts.get(uid, {}).get("client") and accounts[uid]["client"].halt_reconnects()
@@ -130,7 +150,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 raise
             hass.loop.call_soon_threadsafe(
                 hass.async_create_task,
-                _async_persist_token_for_account(hass, uid, new_token),
+                _async_persist_token_for_account(hass, uid, new_token, new_refresh),
             )
             return new_token
 
@@ -144,7 +164,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except ConnectionError as exc:
             raise ConfigEntryNotReady(f"MQTT connection failed: {exc}") from exc
 
-        accounts[uid] = {"client": mqtt_client, "entries": set()}
+        # The access token is only valid for 2 hours and the MQTT connection
+        # can otherwise sit open well past that without ever reconnecting, so
+        # refresh proactively on a schedule instead of only reacting to a
+        # disconnect or a failed REST call.
+        async def _proactive_token_refresh(_now: object = None) -> None:
+            try:
+                await hass.async_add_executor_job(_token_refresher)
+            except Exception as exc:  # noqa: BLE001 — already logged/handled above
+                _LOGGER.debug("Proactive token refresh for %s did not succeed: %s", uid, exc)
+
+        cancel_proactive_refresh = async_track_time_interval(
+            hass, _proactive_token_refresh, timedelta(seconds=PROACTIVE_TOKEN_REFRESH_INTERVAL)
+        )
+
+        accounts[uid] = {
+            "client": mqtt_client,
+            "entries": set(),
+            "cancel_proactive_refresh": cancel_proactive_refresh,
+        }
         _LOGGER.info("Landbook: shared MQTT connection established for account %s", uid)
     else:
         mqtt_client = accounts[uid]["client"]
@@ -343,14 +381,15 @@ async def _async_trigger_reauth(hass: HomeAssistant, entry: ConfigEntry) -> None
     entry.async_start_reauth(hass)
 
 
-async def _async_persist_token_for_account(hass: HomeAssistant, uid: str, token: str) -> None:
-    """Persist a refreshed token to all config entries for this account."""
+async def _async_persist_token_for_account(hass: HomeAssistant, uid: str, token: str, refresh_tok: str) -> None:
+    """Persist a refreshed access/refresh token pair to all config entries for this account."""
     accounts = hass.data.get(DOMAIN, {}).get("_accounts", {})
     for eid in list(accounts.get(uid, {}).get("entries", set())):
         cfg_entry = hass.config_entries.async_get_entry(eid)
         if cfg_entry:
             hass.config_entries.async_update_entry(
-                cfg_entry, data={**cfg_entry.data, CONF_BEARER_TOKEN: token}
+                cfg_entry,
+                data={**cfg_entry.data, CONF_BEARER_TOKEN: token, CONF_REFRESH_TOKEN: refresh_tok},
             )
 
 
@@ -367,6 +406,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 # Last device for this account — disconnect
                 client: LandbookMQTTClient = accounts[uid]["client"]
                 await hass.async_add_executor_job(client.disconnect)
+                cancel_proactive_refresh = accounts[uid].get("cancel_proactive_refresh")
+                if cancel_proactive_refresh:
+                    cancel_proactive_refresh()
                 del accounts[uid]
                 _LOGGER.info("Landbook: shared MQTT connection closed for account %s", uid)
     return unload_ok

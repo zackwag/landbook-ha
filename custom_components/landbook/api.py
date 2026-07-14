@@ -57,8 +57,13 @@ def _default_headers() -> dict[str, str]:
     }
 
 
-def login(email: str, password: str, region: str = DEFAULT_REGION) -> tuple[str, str]:
-    """Authenticate and return (bearer_token, uid)."""
+def login(email: str, password: str, region: str = DEFAULT_REGION) -> tuple[str, str, str]:
+    """Authenticate and return (bearer_token, uid, refresh_token).
+
+    The access token is only valid for 2 hours; the refresh token (returned
+    alongside it) is what actually renews the session and is valid for 30
+    days. Both must be persisted — see refresh_token() below.
+    """
     cfg = _region_cfg(region)
     pwd, rand = _encrypt_password(password)
 
@@ -89,11 +94,12 @@ def login(email: str, password: str, region: str = DEFAULT_REGION) -> tuple[str,
         raise LandbookAuthError(f"Login failed: {resp.get('msg', 'unknown error')}")
 
     bearer_token: str = resp["data"]["accessToken"]["token"]
+    refresh_token_value: str = resp["data"]["refreshToken"]["token"]
     rest_token = bearer_token.replace("Bearer ", "")
     payload_b64 = rest_token.split(".")[1]
     uid: str = json.loads(base64.b64decode(payload_b64 + "=="))["uid"]
 
-    return bearer_token, uid
+    return bearer_token, uid, refresh_token_value
 
 
 def _api_get(bearer_token: str, api_base: str, path: str, params: dict | None = None) -> Any:
@@ -128,16 +134,26 @@ def get_tsl(bearer_token: str, pk: str, region: str = DEFAULT_REGION) -> list[di
     return properties
 
 
-def refresh_token(bearer_token: str, region: str = DEFAULT_REGION) -> str:
+def refresh_token(bearer_token: str, refresh_token_value: str, region: str = DEFAULT_REGION) -> tuple[str, str]:
+    """Exchange the refresh token for a new (access_token, refresh_token) pair.
+
+    The API requires BOTH the current access token as the Authorization
+    header AND the full refresh token (including its "Bearer " prefix) as a
+    form-encoded `refreshToken` body field — sending only one or the other
+    is rejected. The refresh token itself rotates on every successful call,
+    so the new one returned here must be persisted too, not just the access
+    token.
+    """
     api_base = _region_cfg(region)["api_base"]
     headers = {
         **_default_headers(),
         "Authorization": bearer_token,
         "Content-Type": "application/x-www-form-urlencoded",
     }
+    data = urllib.parse.urlencode({"refreshToken": refresh_token_value}).encode()
     req = urllib.request.Request(
         api_base + "/v2/enduser/enduserapi/refreshToken",
-        data=b"",
+        data=data,
         headers=headers,
         method="PUT",
     )
@@ -148,7 +164,7 @@ def refresh_token(bearer_token: str, region: str = DEFAULT_REGION) -> str:
 
     if resp.get("code") != 200 or "data" not in resp:
         raise LandbookAuthError(f"Token refresh rejected: {resp.get('msg', 'unknown error')}")
-    return resp["data"]["accessToken"]["token"]
+    return resp["data"]["accessToken"]["token"], resp["data"]["refreshToken"]["token"]
 
 
 def get_device_attributes(bearer_token: str, pk: str, dk: str, region: str = DEFAULT_REGION) -> dict:
@@ -156,7 +172,7 @@ def get_device_attributes(bearer_token: str, pk: str, dk: str, region: str = DEF
     return _api_get(bearer_token, api_base, "/v2/binding/enduserapi/getDeviceBusinessAttributes", {"pk": pk, "dk": dk})
 
 
-async def async_login(email: str, password: str, region: str = DEFAULT_REGION) -> tuple[str, str]:
+async def async_login(email: str, password: str, region: str = DEFAULT_REGION) -> tuple[str, str, str]:
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, login, email, password, region)
 
@@ -171,9 +187,11 @@ async def async_get_tsl(bearer_token: str, pk: str, region: str = DEFAULT_REGION
     return await loop.run_in_executor(None, get_tsl, bearer_token, pk, region)
 
 
-async def async_refresh_token(bearer_token: str, region: str = DEFAULT_REGION) -> str:
+async def async_refresh_token(
+    bearer_token: str, refresh_token_value: str, region: str = DEFAULT_REGION
+) -> tuple[str, str]:
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, refresh_token, bearer_token, region)
+    return await loop.run_in_executor(None, refresh_token, bearer_token, refresh_token_value, region)
 
 
 async def async_get_device_attributes(bearer_token: str, pk: str, dk: str, region: str = DEFAULT_REGION) -> dict:
