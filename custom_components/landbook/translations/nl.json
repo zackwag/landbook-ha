@@ -12,8 +12,7 @@
       "pick_device": {
         "title": "Apparaat selecteren",
         "data": {
-          "device": "Apparaat",
-          "restore_state": "Pieptoon dempen bij inschakelen of snelheid wijzigen"
+          "device": "Apparaat"
         }
       },
       "reauth_confirm": {
@@ -39,12 +38,10 @@
       "init": {
         "title": "Landbook-opties",
         "data": {
-          "restore_state": "Pieptoon dempen bij inschakelen of snelheid wijzigen",
           "temperature_unit": "Temperatuureenheid",
           "signal_strength_enabled": "Wi-Fi signaalsterktesensor weergeven"
         },
         "data_description": {
-          "restore_state": "Onderdrukt de bevestigingstoon na elk commando. Wijzigt de geluidsinstelling van het apparaat niet permanent — gebruik daarvoor de schakelaar Apparaatgeluid.",
           "temperature_unit": "Het apparaat rapporteert de temperatuur altijd in °F. Bij selectie van °C wordt de waarde omgezet voor weergave.",
           "signal_strength_enabled": "Voegt een Wi-Fi signaalsterktesensor (dBm) toe. Vereist elke 5 minuten een REST API-aanroep — schakel alleen in als u dit nodig hebt."
         }

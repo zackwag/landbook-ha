@@ -12,8 +12,7 @@
       "pick_device": {
         "title": "장치 선택",
         "data": {
-          "device": "장치",
-          "restore_state": "전원 켜기 또는 속도 변경 시 비프음 음소거"
+          "device": "장치"
         }
       },
       "reauth_confirm": {
@@ -39,12 +38,10 @@
       "init": {
         "title": "Landbook 옵션",
         "data": {
-          "restore_state": "전원 켜기 또는 속도 변경 시 비프음 음소거",
           "temperature_unit": "온도 단위",
           "signal_strength_enabled": "Wi-Fi 신호 강도 센서 표시"
         },
         "data_description": {
-          "restore_state": "각 명령 후 확인 비프음을 억제합니다. 장치 사운드 설정을 영구적으로 변경하지 않습니다 — 장치 사운드 스위치를 사용하세요.",
           "temperature_unit": "장치는 항상 °F로 온도를 보고합니다. °C를 선택하면 값이 표시용으로 변환됩니다.",
           "signal_strength_enabled": "Wi-Fi 신호 강도 센서(dBm)를 추가합니다. 5분마다 REST API 호출이 필요합니다 — 필요한 경우에만 활성화하세요."
         }

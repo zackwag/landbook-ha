@@ -1,7 +1,6 @@
 """Fan entity for Landbook integration."""
 from __future__ import annotations
 
-import asyncio
 import logging
 import math
 from typing import Any
@@ -12,8 +11,7 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import (CONF_DEVICE_NAME, CONF_FW_VERSION, CONF_PRODUCT_NAME,
-                    CONF_RESTORE_STATE, DOMAIN)
+from .const import CONF_DEVICE_NAME, CONF_FW_VERSION, CONF_PRODUCT_NAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -136,16 +134,6 @@ class LandbookFan(FanEntity):
     # Commands
     # ------------------------------------------------------------------
 
-    async def _async_restore_preferred(self, props: dict) -> None:
-        await asyncio.sleep(1.5)
-        self._send(props)
-
-    def _restore_state_enabled(self) -> bool:
-        return bool(self._entry.options.get(
-            CONF_RESTORE_STATE,
-            self._entry.data.get(CONF_RESTORE_STATE, False),
-        ))
-
     async def async_turn_on(
         self,
         percentage: int | None = None,
@@ -173,13 +161,6 @@ class LandbookFan(FanEntity):
 
         self._is_on = True
         self._send(props)
-        if self._restore_state_enabled():
-            preferred = {
-                k: v for k, v in self._data.get("preferred_state", {}).items()
-                if k not in props
-            }
-            if preferred:
-                self.hass.async_create_task(self._async_restore_preferred(preferred))
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
@@ -242,13 +223,7 @@ class LandbookFan(FanEntity):
             if not changed or code in changed:
                 raw = shared.get(code)
                 if raw is not None:
-                    was_on = self._is_on
                     self._is_on = bool(raw)
-                    if was_on and not self._is_on and self._restore_state_enabled():
-                        self._data["preferred_state"] = {
-                            k: v for k, v in shared.items()
-                            if k != code and v is not None
-                        }
                     updated = True
 
         if self._speed_prop:

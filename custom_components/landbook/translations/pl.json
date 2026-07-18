@@ -12,8 +12,7 @@
       "pick_device": {
         "title": "Wybierz urządzenie",
         "data": {
-          "device": "Urządzenie",
-          "restore_state": "Wycisz sygnał dźwiękowy przy włączaniu lub zmianie prędkości"
+          "device": "Urządzenie"
         }
       },
       "reauth_confirm": {
@@ -39,12 +38,10 @@
       "init": {
         "title": "Opcje Landbook",
         "data": {
-          "restore_state": "Wycisz sygnał dźwiękowy przy włączaniu lub zmianie prędkości",
           "temperature_unit": "Jednostka temperatury",
           "signal_strength_enabled": "Pokaż czujnik siły sygnału Wi-Fi"
         },
         "data_description": {
-          "restore_state": "Wycisza sygnał potwierdzenia po każdej komendzie. Nie zmienia trwale ustawienia dźwięku urządzenia — użyj przełącznika Dźwięk urządzenia.",
           "temperature_unit": "Urządzenie zawsze raportuje temperaturę w °F. Wybierając °C, wartość jest przeliczana do wyświetlenia.",
           "signal_strength_enabled": "Dodaje czujnik siły sygnału Wi-Fi (dBm). Wymaga wywołania interfejsu API REST co 5 minut — włącz tylko wtedy, gdy jest potrzebne."
         }

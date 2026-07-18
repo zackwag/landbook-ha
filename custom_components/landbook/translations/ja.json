@@ -12,8 +12,7 @@
       "pick_device": {
         "title": "デバイスを選択",
         "data": {
-          "device": "デバイス",
-          "restore_state": "電源オンまたは速度変更時にビープ音を消音"
+          "device": "デバイス"
         }
       },
       "reauth_confirm": {
@@ -39,12 +38,10 @@
       "init": {
         "title": "Landbook オプション",
         "data": {
-          "restore_state": "電源オンまたは速度変更時にビープ音を消音",
           "temperature_unit": "温度単位",
           "signal_strength_enabled": "Wi-Fi 電波強度センサーを表示"
         },
         "data_description": {
-          "restore_state": "各コマンド後の確認ビープ音を抑制します。デバイスのサウンド設定を永続的に変更しません — それにはデバイスサウンドスイッチを使用してください。",
           "temperature_unit": "デバイスは常に °F で温度を報告します。°C を選択すると、値が表示用に変換されます。",
           "signal_strength_enabled": "Wi-Fi 電波強度センサー（dBm）を追加します。5 分ごとに REST API 呼び出しが必要です — 必要な場合のみ有効にしてください。"
         }

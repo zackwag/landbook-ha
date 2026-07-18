@@ -12,8 +12,7 @@
       "pick_device": {
         "title": "Sélectionner l'appareil",
         "data": {
-          "device": "Appareil",
-          "restore_state": "Couper le bip lors de la mise en marche ou du changement de vitesse"
+          "device": "Appareil"
         }
       },
       "reauth_confirm": {
@@ -39,12 +38,10 @@
       "init": {
         "title": "Options Landbook",
         "data": {
-          "restore_state": "Couper le bip lors de la mise en marche ou du changement de vitesse",
           "temperature_unit": "Unité de température",
           "signal_strength_enabled": "Afficher le capteur d'intensité du signal Wi-Fi"
         },
         "data_description": {
-          "restore_state": "Supprime le bip de confirmation après chaque commande. Ne modifie pas définitivement le paramètre sonore de l'appareil — utilisez le commutateur Son de l'appareil pour cela.",
           "temperature_unit": "L'appareil rapporte toujours la température en °F. Sélectionner °C convertit la valeur pour l'affichage.",
           "signal_strength_enabled": "Ajoute un capteur d'intensité du signal Wi-Fi (dBm). Nécessite un appel à l'API REST toutes les 5 minutes — activez uniquement si nécessaire."
         }

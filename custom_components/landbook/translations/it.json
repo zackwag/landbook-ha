@@ -12,8 +12,7 @@
       "pick_device": {
         "title": "Seleziona dispositivo",
         "data": {
-          "device": "Dispositivo",
-          "restore_state": "Disattiva il segnale acustico all'accensione o al cambio di velocità"
+          "device": "Dispositivo"
         }
       },
       "reauth_confirm": {
@@ -39,12 +38,10 @@
       "init": {
         "title": "Opzioni Landbook",
         "data": {
-          "restore_state": "Disattiva il segnale acustico all'accensione o al cambio di velocità",
           "temperature_unit": "Unità di temperatura",
           "signal_strength_enabled": "Mostra sensore di intensità del segnale Wi-Fi"
         },
         "data_description": {
-          "restore_state": "Sopprime il segnale acustico di conferma dopo ogni comando. Non modifica permanentemente l'impostazione audio del dispositivo — utilizza l'interruttore Audio dispositivo per questo.",
           "temperature_unit": "Il dispositivo riporta sempre la temperatura in °F. Selezionando °C il valore viene convertito per la visualizzazione.",
           "signal_strength_enabled": "Aggiunge un sensore di intensità del segnale Wi-Fi (dBm). Richiede una chiamata all'API REST ogni 5 minuti — abilitare solo se necessario."
         }

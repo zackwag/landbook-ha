@@ -12,8 +12,7 @@
       "pick_device": {
         "title": "Seleccionar dispositivo",
         "data": {
-          "device": "Dispositivo",
-          "restore_state": "Silenciar pitido al encender o cambiar velocidad"
+          "device": "Dispositivo"
         }
       },
       "reauth_confirm": {
@@ -39,12 +38,10 @@
       "init": {
         "title": "Opciones de Landbook",
         "data": {
-          "restore_state": "Silenciar pitido al encender o cambiar velocidad",
           "temperature_unit": "Unidad de temperatura",
           "signal_strength_enabled": "Mostrar sensor de intensidad de señal Wi-Fi"
         },
         "data_description": {
-          "restore_state": "Suprime el pitido de confirmación después de cada comando. No cambia permanentemente la configuración de sonido del dispositivo; use el interruptor de sonido del dispositivo para eso.",
           "temperature_unit": "El dispositivo siempre reporta la temperatura en °F. Al seleccionar °C, el valor se convierte para su visualización.",
           "signal_strength_enabled": "Agrega un sensor de intensidad de señal Wi-Fi (dBm). Requiere una llamada a la API REST cada 5 minutos — actívelo solo si lo necesita."
         }

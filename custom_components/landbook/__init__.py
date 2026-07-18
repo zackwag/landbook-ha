@@ -28,11 +28,9 @@ from .const import (
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
     CONF_FW_VERSION,
-    CONF_MUTE_ON_COMMAND,
     CONF_PRODUCT_KEY,
     CONF_REFRESH_TOKEN,
     CONF_REGION,
-    CONF_RESTORE_STATE,
     CONF_SIGNAL_STRENGTH,
     CONF_UID,
     DISPLAY_LIGHT_HINTS,
@@ -59,12 +57,6 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Landbook from a config entry."""
-    # Migrate deprecated mute_on_command to restore_state
-    if CONF_MUTE_ON_COMMAND in entry.data and CONF_RESTORE_STATE not in entry.data:
-        new_data = {**entry.data, CONF_RESTORE_STATE: entry.data[CONF_MUTE_ON_COMMAND]}
-        new_data.pop(CONF_MUTE_ON_COMMAND, None)
-        hass.config_entries.async_update_entry(entry, data=new_data)
-
     bearer_token: str = entry.data[CONF_BEARER_TOKEN]
     # Entries created before the refresh-token fix have no refresh token on file.
     # They can't be silently upgraded — the old access token alone can't obtain
@@ -212,7 +204,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "light_props": light_props,
         "temperature_prop": temperature_prop,
         "state": {},
-        "preferred_state": {},
         "online": True,
         "uid": uid,
         "all_codes": [p["code"] for p in properties],

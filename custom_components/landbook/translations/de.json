@@ -12,8 +12,7 @@
       "pick_device": {
         "title": "Gerät auswählen",
         "data": {
-          "device": "Gerät",
-          "restore_state": "Piepton beim Ein- oder Umschalten der Geschwindigkeit stummschalten"
+          "device": "Gerät"
         }
       },
       "reauth_confirm": {
@@ -39,12 +38,10 @@
       "init": {
         "title": "Landbook-Optionen",
         "data": {
-          "restore_state": "Piepton beim Ein- oder Umschalten der Geschwindigkeit stummschalten",
           "temperature_unit": "Temperatureinheit",
           "signal_strength_enabled": "WLAN-Signalstärke-Sensor anzeigen"
         },
         "data_description": {
-          "restore_state": "Unterdrückt den Bestätigungston nach jedem Befehl. Ändert die Geräte-Toneinstellung nicht dauerhaft — verwenden Sie dafür den Schalter „Geräteton“.",
           "temperature_unit": "Das Gerät meldet die Temperatur immer in °F. Bei Auswahl von °C wird der Wert zur Anzeige umgerechnet.",
           "signal_strength_enabled": "Fügt einen WLAN-Signalstärke-Sensor (dBm) hinzu. Erfordert alle 5 Minuten einen REST-API-Aufruf — nur aktivieren, wenn benötigt."
         }
