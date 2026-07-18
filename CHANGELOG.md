@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.4] - 2026-07-18
+
+- **Breaking:** Remove the "Restore state when turned on" option. The Landbook cloud resets speed/mode/sound to defaults on every power cycle regardless of what triggered it, and the reset isn't consistently timed relative to a re-sent command, so the restore workaround could never be made reliable. Existing config entries with the option enabled keep the now-unused value on file but it has no effect.
+- Extract the REST/MQTT API client into a standalone [`landbook-api`](https://github.com/zackwag/landbook-api) PyPI package. No functional change — `api.py` and `mqtt_client.py` had no Home Assistant dependencies and move out as-is; the integration now depends on `landbook-api` via `manifest.json` instead of bundling the client code and its `paho-mqtt`/`pycryptodome` requirements directly.
+
 ## [1.3.3] - 2026-07-13
 
 - Fix session refresh — the API requires the account's refresh token (not the access token) to renew a session, and rotates it on every use; the integration only ever sent the access token, so renewal always failed and forced a full reauth every ~2 hours. Now stores and uses the refresh token correctly, and refreshes proactively on a timer ahead of the access token's 2-hour expiry instead of only reacting after it fails.
