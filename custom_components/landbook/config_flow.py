@@ -8,7 +8,8 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 
-from .api import LandbookAuthError, async_get_device_list, async_login
+from landbook_api import DEFAULT_REGION, REGIONS, LandbookAuthError, async_get_device_list, async_login
+
 from .const import (
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
@@ -19,13 +20,10 @@ from .const import (
     CONF_PRODUCT_NAME,
     CONF_REFRESH_TOKEN,
     CONF_REGION,
-    CONF_RESTORE_STATE,
     CONF_SIGNAL_STRENGTH,
     CONF_TEMP_UNIT,
     CONF_UID,
-    DEFAULT_REGION,
     DOMAIN,
-    REGIONS,
     TEMP_UNIT_C,
     TEMP_UNIT_F,
 )
@@ -44,10 +42,6 @@ class LandbookOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current_restore = self.config_entry.options.get(
-            CONF_RESTORE_STATE,
-            self.config_entry.data.get(CONF_RESTORE_STATE, False),
-        )
         current_unit = self.config_entry.options.get(
             CONF_TEMP_UNIT,
             self.config_entry.data.get(CONF_TEMP_UNIT, TEMP_UNIT_F),
@@ -60,7 +54,6 @@ class LandbookOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_RESTORE_STATE, default=current_restore): bool,
                     vol.Required(CONF_TEMP_UNIT, default=current_unit): vol.In([TEMP_UNIT_F, TEMP_UNIT_C]),
                     vol.Required(CONF_SIGNAL_STRENGTH, default=current_signal): bool,
                 }
@@ -203,7 +196,6 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_PRODUCT_KEY: device["productKey"],
                         CONF_DEVICE_NAME: device["deviceName"],
                         CONF_PRODUCT_NAME: device.get("productName", ""),
-                        CONF_RESTORE_STATE: user_input.get(CONF_RESTORE_STATE, False),
                     },
                 )
 
@@ -214,7 +206,6 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required("device"): vol.In(device_names),
-                    vol.Required(CONF_RESTORE_STATE, default=False): bool,
                 }
             ),
             errors=errors,

@@ -45,7 +45,6 @@ Copy `custom_components/landbook/` into your HA `config/custom_components/` dire
 2. Select your region (US, EU, or CN)
 3. Enter your Landbook account email and password
 4. Select the device to add
-5. Optionally enable **Restore state when turned on** (see Options below)
 
 ## Supported Regions
 
@@ -63,14 +62,12 @@ After setup, click **Configure** on the integration card to change:
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| Restore state when turned on | Off | When the fan is turned on, restores the previous speed, mode, oscillation, sound, and display settings. State is saved when the fan turns off (via HA, the app, or the physical button). Disabled by default — enable if you find the device resets to unwanted defaults on each power cycle. |
 | Temperature unit | °F | The device always reports temperature in °F. Selecting °C converts the value for display in Home Assistant. |
 | Show Wi-Fi signal strength sensor | Off | Adds a signal strength sensor (dBm). **Requires a REST API call every 5 minutes** — this is additional polling on top of the normal push-based connection. Enable only if you need it. |
 
 ## Requirements
 
-- `paho-mqtt >= 2.0.0` (installed automatically)
-- `pycryptodome >= 3.0.0` (installed automatically)
+- [`landbook-api`](https://github.com/zackwag/landbook-api) (installed automatically) — the standalone Python client for the Landbook cloud API (REST auth/device discovery and MQTT pub/sub) that this integration is built on. It pulls in `paho-mqtt >= 2.0.0` and `pycryptodome >= 3.0.0`.
 - Home Assistant 2024.1.0 or newer
 
 ## Notes
@@ -78,7 +75,7 @@ After setup, click **Configure** on the integration card to change:
 - **Fan speed in Auto mode** — speed shows as unknown while Auto is active. The device controls speed autonomously in this mode and does not push immediate updates, matching the behavior of the native Landbook app. Speed resumes showing when you switch back to another mode.
 - **Temperature** updates arrive when the device reports a state change — there is no fixed polling interval.
 - **Fan controls availability** — speed, mode, oscillation, countdown, sound, and display entities are marked unavailable while the fan is off, matching the behavior of the Landbook app. Temperature and signal strength remain available regardless of fan state.
-- **Restore state** — when enabled, turning the fan on via any method (HA, app, or physical button) re-applies the settings that were active when it was last turned off. This works around the device resetting to default speed, mode, and sound on every power cycle.
+- **State on power-on** — the device resets speed, mode, and sound to defaults on every power cycle, regardless of what turned it on (HA, the app, or the physical button) or what settings were active before it was turned off. This happens on the Landbook cloud side, not in this integration, so there is no reliable way to restore previous settings after power-on — commands sent immediately after turn-on are overwritten by the reset. A previous "Restore state" option attempted to work around this by re-sending settings after a delay; it was removed because the cloud's reset is not consistently timed, so the workaround could not be made reliable.
 - **State on startup** — the integration requests a full state read from the device on every connect and reconnect, so entities reflect actual device state after a restart even if the device was already on.
 - **Device availability** — all entities go unavailable if the device drops off the Landbook cloud (MQTT `onl_` event). They recover automatically when the device reconnects.
 - **Session expiry** — the access token (2-hour lifetime) is renewed automatically in the background using the account's refresh token, both proactively on a timer and whenever a reconnect or API call needs it. If the refresh token itself has expired or been revoked, Home Assistant will prompt you to re-enter your password from the integration card. No need to remove and re-add the device.

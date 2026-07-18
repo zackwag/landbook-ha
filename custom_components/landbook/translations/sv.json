@@ -12,8 +12,7 @@
       "pick_device": {
         "title": "Välj enhet",
         "data": {
-          "device": "Enhet",
-          "restore_state": "Tysta pip vid på-slag eller hastighetsbyte"
+          "device": "Enhet"
         }
       },
       "reauth_confirm": {
@@ -39,12 +38,10 @@
       "init": {
         "title": "Landbook-alternativ",
         "data": {
-          "restore_state": "Tysta pip vid på-slag eller hastighetsbyte",
           "temperature_unit": "Temperatureenhet",
           "signal_strength_enabled": "Visa sensor för Wi-Fi-signalstyrka"
         },
         "data_description": {
-          "restore_state": "Undertrycker bekräftelsepipet efter varje kommando. Ändrar inte enhetens ljudinställning permanent — använd enhetens ljudbrytare för det.",
           "temperature_unit": "Enheten rapporterar alltid temperaturen i °F. Om °C väljs konverteras värdet för visning.",
           "signal_strength_enabled": "Lägger till en sensor för Wi-Fi-signalstyrka (dBm). Kräver ett REST API-anrop var 5:e minut — aktivera bara om det behövs."
         }
