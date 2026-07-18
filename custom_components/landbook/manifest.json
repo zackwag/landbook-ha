@@ -8,6 +8,6 @@
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/zackwag/landbook-ha/issues",
   "quality_scale": "custom",
-  "requirements": ["paho-mqtt>=2.0.0", "pycryptodome>=3.0.0"],
+  "requirements": ["landbook-api>=0.1.0"],
   "version": "1.3.3"
 }

@@ -8,7 +8,8 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 
-from .api import LandbookAuthError, async_get_device_list, async_login
+from landbook_api import DEFAULT_REGION, REGIONS, LandbookAuthError, async_get_device_list, async_login
+
 from .const import (
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
@@ -23,9 +24,7 @@ from .const import (
     CONF_SIGNAL_STRENGTH,
     CONF_TEMP_UNIT,
     CONF_UID,
-    DEFAULT_REGION,
     DOMAIN,
-    REGIONS,
     TEMP_UNIT_C,
     TEMP_UNIT_F,
 )

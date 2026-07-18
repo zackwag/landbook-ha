@@ -69,8 +69,7 @@ After setup, click **Configure** on the integration card to change:
 
 ## Requirements
 
-- `paho-mqtt >= 2.0.0` (installed automatically)
-- `pycryptodome >= 3.0.0` (installed automatically)
+- [`landbook-api`](https://github.com/zackwag/landbook-api) (installed automatically) — the standalone Python client for the Landbook cloud API (REST auth/device discovery and MQTT pub/sub) that this integration is built on. It pulls in `paho-mqtt >= 2.0.0` and `pycryptodome >= 3.0.0`.
 - Home Assistant 2024.1.0 or newer
 
 ## Notes

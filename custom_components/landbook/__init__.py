@@ -12,7 +12,18 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_time_interval
 from datetime import timedelta
 
-from .api import LandbookAPIError, LandbookAuthError, async_get_device_attributes, async_get_tsl, async_refresh_token, refresh_token
+from landbook_api import (
+    DEFAULT_REGION,
+    REGIONS,
+    LandbookAPIError,
+    LandbookAuthError,
+    LandbookMQTTClient,
+    async_get_device_attributes,
+    async_get_tsl,
+    async_refresh_token,
+    refresh_token,
+)
+
 from .const import (
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
@@ -24,18 +35,15 @@ from .const import (
     CONF_RESTORE_STATE,
     CONF_SIGNAL_STRENGTH,
     CONF_UID,
-    DEFAULT_REGION,
     DISPLAY_LIGHT_HINTS,
     DOMAIN,
     PROACTIVE_TOKEN_REFRESH_INTERVAL,
-    REGIONS,
     SIGNAL_STRENGTH_POLL_INTERVAL,
     TEMPERATURE_NAME_HINTS,
     OSCILLATION_NAME_HINTS,
     POWER_SORT_ORDER,
     SPEED_NAME_HINTS,
 )
-from .mqtt_client import LandbookMQTTClient
 
 _LOGGER = logging.getLogger(__name__)
 
