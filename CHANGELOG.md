@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.3.5] - 2026-07-23
+
+- Fix `brand/icon@2x.png`, which contained WebP data mislabeled with a `.png` extension (and was the wrong size, 280×280 instead of a valid 2x of the 256×256 `icon.png`). Regenerated as a proper 512×512 PNG. Also removes an unreferenced duplicate `icon.png` that lived outside the `brand/` directory HA/HACS actually reads brand assets from. No functional change.
+
 ## [1.3.4] - 2026-07-18
 
 - **Breaking:** Remove the "Restore state when turned on" option. The Landbook cloud resets speed/mode/sound to defaults on every power cycle regardless of what triggered it, and the reset isn't consistently timed relative to a re-sent command, so the restore workaround could never be made reliable. Existing config entries with the option enabled keep the now-unused value on file but it has no effect.
