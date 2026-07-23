@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.3.6] - 2026-07-23
+
+- No functional change. Re-cut as a clean release for HACS default-repository submission — v1.3.5 was published before its HACS/hassfest validation runs on the same commit had finished (they passed, but out of order), so this release is cut only after confirming both are green.
+
 ## [1.3.5] - 2026-07-23
 
 - Fix `brand/icon@2x.png`, which contained WebP data mislabeled with a `.png` extension (and was the wrong size, 280×280 instead of a valid 2x of the 256×256 `icon.png`). Regenerated as a proper 512×512 PNG. Also removes an unreferenced duplicate `icon.png` that lived outside the `brand/` directory HA/HACS actually reads brand assets from. No functional change.
