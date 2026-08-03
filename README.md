@@ -30,10 +30,8 @@ Other Landbook devices may work but have not been verified. If yours does, pleas
 ### HACS (recommended)
 
 1. In HA, go to **HACS → Integrations**
-2. Click the three-dot menu (top right) → **Custom repositories**
-3. Enter `https://github.com/zackwag/landbook-ha` and set category to **Integration**
-4. Click **Add**, then find and install **Landbook**
-5. Restart Home Assistant
+2. Search for **Landbook** and click **Install**
+3. Restart Home Assistant
 
 ### Manual
 
