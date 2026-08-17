@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.7] - 2026-08-17
+
+- Update README.md- Persist refreshed token to all account entries on startup, update translations and README
+
+
+
 ## [1.3.6] - 2026-07-23
 
 - No functional change. Re-cut as a clean release for HACS default-repository submission — v1.3.5 was published before its HACS/hassfest validation runs on the same commit had finished (they passed, but out of order), so this release is cut only after confirming both are green.

@@ -80,14 +80,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
             try:
                 bearer_token, refresh_tok = await async_refresh_token(bearer_token, refresh_tok, region)
-                hass.config_entries.async_update_entry(
-                    entry,
-                    data={
-                        **entry.data,
-                        CONF_BEARER_TOKEN: bearer_token,
-                        CONF_REFRESH_TOKEN: refresh_tok,
-                    },
-                )
+                # Persist to all entries for this account so the second device
+                # doesn't attempt a refresh with a now-rotated token on startup.
+                for cfg_entry in hass.config_entries.async_entries(DOMAIN):
+                    if cfg_entry.data.get(CONF_UID) == uid:
+                        hass.config_entries.async_update_entry(
+                            cfg_entry,
+                            data={**cfg_entry.data, CONF_BEARER_TOKEN: bearer_token, CONF_REFRESH_TOKEN: refresh_tok},
+                        )
                 properties = await async_get_tsl(bearer_token, pk, region)
             except LandbookAuthError as auth_exc:
                 if "rejected" in str(auth_exc).lower():
