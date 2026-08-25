@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.8] - 2026-08-25
+
+- Add GitHub Action to close stale issues- Fix multi-device token refresh race condition (issue #9)
+
+
+
 ## [1.3.7] - 2026-08-17
 
 - Update README.md- Persist refreshed token to all account entries on startup, update translations and README

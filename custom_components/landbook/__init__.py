@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -119,40 +120,44 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if uid not in accounts:
         # First device for this account — create the shared MQTT client
+        _refresh_lock = threading.Lock()
+
         def _token_refresher() -> str:
-            # Read the latest token from any entry for this account so we never
-            # refresh using a stale token after a previous successful refresh
-            current_token = bearer_token
-            current_refresh = refresh_tok
-            for eid in list(accounts.get(uid, {}).get("entries", set())):
-                cfg_entry = hass.config_entries.async_get_entry(eid)
-                if cfg_entry:
-                    current_token = cfg_entry.data.get(CONF_BEARER_TOKEN, bearer_token)
-                    current_refresh = cfg_entry.data.get(CONF_REFRESH_TOKEN, refresh_tok)
-                    break
-            try:
-                if not current_refresh:
-                    raise LandbookAuthError("No refresh token on file (pre-upgrade entry) — reauth required")
-                new_token, new_refresh = refresh_token(current_token, current_refresh, region)
-            except LandbookAuthError as exc:
-                _LOGGER.warning("Token rejected for %s, triggering reauth: %s", uid, exc)
-                accounts.get(uid, {}).get("client") and accounts[uid]["client"].halt_reconnects()
+            # Serialize refresh attempts — concurrent calls (proactive timer +
+            # MQTT reconnect) would both read the same refresh token, but only
+            # the first succeeds because the token rotates on use.
+            with _refresh_lock:
+                current_token = bearer_token
+                current_refresh = refresh_tok
                 for eid in list(accounts.get(uid, {}).get("entries", set())):
                     cfg_entry = hass.config_entries.async_get_entry(eid)
                     if cfg_entry:
-                        hass.loop.call_soon_threadsafe(
-                            hass.async_create_task,
-                            _async_trigger_reauth(hass, cfg_entry),
-                        )
-                raise
-            except Exception as exc:
-                _LOGGER.warning("Token refresh failed for %s (network?), will retry: %s", uid, exc)
-                raise
-            hass.loop.call_soon_threadsafe(
-                hass.async_create_task,
-                _async_persist_token_for_account(hass, uid, new_token, new_refresh),
-            )
-            return new_token
+                        current_token = cfg_entry.data.get(CONF_BEARER_TOKEN, bearer_token)
+                        current_refresh = cfg_entry.data.get(CONF_REFRESH_TOKEN, refresh_tok)
+                        break
+                try:
+                    if not current_refresh:
+                        raise LandbookAuthError("No refresh token on file (pre-upgrade entry) — reauth required")
+                    new_token, new_refresh = refresh_token(current_token, current_refresh, region)
+                except LandbookAuthError as exc:
+                    _LOGGER.warning("Token rejected for %s, triggering reauth: %s", uid, exc)
+                    accounts.get(uid, {}).get("client") and accounts[uid]["client"].halt_reconnects()
+                    for eid in list(accounts.get(uid, {}).get("entries", set())):
+                        cfg_entry = hass.config_entries.async_get_entry(eid)
+                        if cfg_entry:
+                            hass.loop.call_soon_threadsafe(
+                                hass.async_create_task,
+                                _async_trigger_reauth(hass, cfg_entry),
+                            )
+                    raise
+                except Exception as exc:
+                    _LOGGER.warning("Token refresh failed for %s (network?), will retry: %s", uid, exc)
+                    raise
+                hass.loop.call_soon_threadsafe(
+                    hass.async_create_task,
+                    _async_persist_token_for_account(hass, uid, new_token, new_refresh),
+                )
+                return new_token
 
         mqtt_client = LandbookMQTTClient(
             uid, bearer_token,
