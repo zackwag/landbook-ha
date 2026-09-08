@@ -1,6 +1,7 @@
 """Landbook integration."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 from typing import Any
@@ -70,10 +71,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     region_cfg = REGIONS.get(region, REGIONS[DEFAULT_REGION])
     device_id = f"qd{pk}{dk}"
 
-    try:
-        properties = await async_get_tsl(bearer_token, pk, region)
-    except LandbookAPIError as exc:
-        if "Token validation failed" in str(exc):
+    # Every device on one account keeps its own copy of a *single-use* refresh
+    # token. On a cold boot Home Assistant sets up all of the account's config
+    # entries concurrently, so without serialization each entry would call
+    # async_refresh_token() with the same token — the first rotates it and the
+    # rest get "Token refresh rejected" and a spurious reauth (issue #9). The
+    # runtime _refresh_lock below only covers the proactive-timer / MQTT-reconnect
+    # path, not this setup-time path.
+    #
+    # Serialize the setup-time token check/refresh per account: the first entry
+    # refreshes and persists the new pair to every entry for the account; the
+    # others wait on the lock, re-read the now-fresh token from their entry, and
+    # skip the refresh entirely.
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    setup_locks = domain_data.setdefault("_setup_locks", {})
+    setup_lock = setup_locks.get(uid)
+    if setup_lock is None:
+        setup_lock = setup_locks[uid] = asyncio.Lock()
+
+    async with setup_lock:
+        # A sibling entry for this account may have refreshed the token while we
+        # were waiting for the lock — pick up whatever is current on our entry.
+        current_entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+        bearer_token = current_entry.data.get(CONF_BEARER_TOKEN, bearer_token)
+        refresh_tok = current_entry.data.get(CONF_REFRESH_TOKEN, refresh_tok)
+
+        try:
+            properties = await async_get_tsl(bearer_token, pk, region)
+        except LandbookAPIError as exc:
+            if "Token validation failed" not in str(exc):
+                raise ConfigEntryNotReady(f"Could not fetch TSL model: {exc}") from exc
             if not refresh_tok:
                 entry.async_start_reauth(hass)
                 raise ConfigEntryNotReady(
@@ -81,8 +108,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
             try:
                 bearer_token, refresh_tok = await async_refresh_token(bearer_token, refresh_tok, region)
-                # Persist to all entries for this account so the second device
-                # doesn't attempt a refresh with a now-rotated token on startup.
+                # Persist to all entries for this account so a sibling entry picks
+                # up the fresh pair instead of racing the now-rotated refresh token.
                 for cfg_entry in hass.config_entries.async_entries(DOMAIN):
                     if cfg_entry.data.get(CONF_UID) == uid:
                         hass.config_entries.async_update_entry(
@@ -96,8 +123,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 raise ConfigEntryNotReady(f"Token expired and refresh failed: {auth_exc}") from auth_exc
             except LandbookAPIError as retry_exc:
                 raise ConfigEntryNotReady(f"Could not fetch TSL model after token refresh: {retry_exc}") from retry_exc
-        else:
-            raise ConfigEntryNotReady(f"Could not fetch TSL model: {exc}") from exc
 
     power_prop        = _find_power_prop(properties)
     speed_prop        = _find_speed_prop(properties, power_prop)
@@ -115,7 +140,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         claimed.add(id(countdown_prop))
     extra_props = [p for p in properties if id(p) not in claimed]
 
-    domain_data = hass.data.setdefault(DOMAIN, {})
     accounts = domain_data.setdefault("_accounts", {})
 
     if uid not in accounts:
@@ -266,7 +290,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # On (re)connect, request state for ALL devices on this account
     def _request_all_states() -> None:
         for eid, edata in hass.data.get(DOMAIN, {}).items():
-            if eid == "_accounts" or not isinstance(edata, dict):
+            if eid in ("_accounts", "_setup_locks") or not isinstance(edata, dict):
                 continue
             if edata.get("uid") == uid:
                 mqtt_client.send_read(
@@ -414,6 +438,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 if cancel_proactive_refresh:
                     cancel_proactive_refresh()
                 del accounts[uid]
+                domain_data.get("_setup_locks", {}).pop(uid, None)
                 _LOGGER.info("Landbook: shared MQTT connection closed for account %s", uid)
     return unload_ok
 

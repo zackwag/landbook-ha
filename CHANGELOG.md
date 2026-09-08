@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Fix multi-device reauth race on startup (issue #9). On a cold boot Home Assistant sets up every config entry for an account concurrently; when the access token had expired, each entry independently called the refresh endpoint with the same single-use refresh token, so only the first succeeded and the rest were forced into a reauth prompt. The setup-time token check/refresh is now serialized per account with a lock — the first entry refreshes and persists the new token pair to every entry for the account, and the others re-read the fresh token and skip the refresh. The earlier 1.3.7/1.3.8 fixes only covered the startup persist-sync and the runtime (proactive-timer / MQTT-reconnect) refresh path, not this setup path.
+
 ## [1.3.8] - 2026-08-25
 
 - Add GitHub Action to close stale issues- Fix multi-device token refresh race condition (issue #9)
