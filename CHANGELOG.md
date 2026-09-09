@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.10] - 2026-09-09
+
+- Prevent spurious reauth on cold boot, guard MQTT client creation (PR #11)
+- Fix stale token on proactive refresh — use in-memory token pair (issue #9)
+- Add test suite for integration- Prevent spurious reauth on cold boot, fix stale token on proactive refresh (issue #9)
+
+
+
 ## [1.3.9] - 2026-09-08
 
 - Serialize setup-time token refresh per account (issue #9) (#10)- Add test suite for token refresh race conditions, merge setup-time lock fix (issue #9)

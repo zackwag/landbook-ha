@@ -179,6 +179,56 @@ class TestRuntimeRefreshLock:
         # The persist is dispatched via call_soon_threadsafe, so check the call was made
         assert hass.loop.call_soon_threadsafe.called
 
+    def test_sequential_refreshes_use_latest_token(self, mock_landbook_api):
+        """The second refresh call must use the token pair from the first refresh,
+        not the stale pair from config entries (which are updated asynchronously)."""
+        hass = make_hass()
+        api = mock_landbook_api
+        from custom_components.landbook.const import DOMAIN
+
+        entry = make_config_entry(hass, entry_id="seq1", uid="u1",
+                                  bearer_token="tok_v1", refresh_token="ref_v1")
+        register_entry(hass, entry)
+        hass.data.setdefault(DOMAIN, {})
+
+        api.refresh_token.return_value = ("tok_v2", "ref_v2")
+
+        import asyncio
+        from custom_components.landbook import async_setup_entry
+
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(async_setup_entry(hass, entry))
+        finally:
+            loop.close()
+
+        call_kwargs = api.mqtt_cls.call_args
+        refresher = call_kwargs[1]["token_refresher"]
+
+        # First runtime refresh: should use tok_v1/ref_v1 from setup
+        api.refresh_token.reset_mock()
+        api.refresh_token.return_value = ("tok_v2", "ref_v2")
+        result1 = refresher()
+        assert result1 == "tok_v2"
+        first_call_args = api.refresh_token.call_args[0]
+
+        # Second runtime refresh: must use tok_v2/ref_v2 from in-memory state,
+        # NOT the config entry (which may still have tok_v1/ref_v1 because
+        # the async persist hasn't run yet)
+        api.refresh_token.reset_mock()
+        api.refresh_token.return_value = ("tok_v3", "ref_v3")
+        result2 = refresher()
+        assert result2 == "tok_v3"
+        second_call_args = api.refresh_token.call_args[0]
+
+        # The second call must have used the output of the first, not the original
+        assert second_call_args[0] == "tok_v2", (
+            f"Expected access token 'tok_v2' from first refresh, got '{second_call_args[0]}'"
+        )
+        assert second_call_args[1] == "ref_v2", (
+            f"Expected refresh token 'ref_v2' from first refresh, got '{second_call_args[1]}'"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Setup-time asyncio.Lock tests (PR #10 feature)
