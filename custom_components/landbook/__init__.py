@@ -466,7 +466,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         _LOGGER.warning(
                             "Landbook: could not persist latest token for %s on unload: %s", uid, exc
                         )
-                # Last device for this account — disconnect
+
                 client: LandbookMQTTClient = accounts[uid]["client"]
                 await hass.async_add_executor_job(client.disconnect)
                 cancel_proactive_refresh = accounts[uid].get("cancel_proactive_refresh")
