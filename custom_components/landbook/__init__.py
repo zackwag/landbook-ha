@@ -71,58 +71,96 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     region_cfg = REGIONS.get(region, REGIONS[DEFAULT_REGION])
     device_id = f"qd{pk}{dk}"
 
-    # Every device on one account keeps its own copy of a *single-use* refresh
-    # token. On a cold boot Home Assistant sets up all of the account's config
-    # entries concurrently, so without serialization each entry would call
-    # async_refresh_token() with the same token — the first rotates it and the
-    # rest get "Token refresh rejected" and a spurious reauth (issue #9). The
-    # runtime _refresh_lock below only covers the proactive-timer / MQTT-reconnect
-    # path, not this setup-time path.
-    #
-    # Serialize the setup-time token check/refresh per account: the first entry
-    # refreshes and persists the new pair to every entry for the account; the
-    # others wait on the lock, re-read the now-fresh token from their entry, and
-    # skip the refresh entirely.
+    # All devices for one account share a single rotating refresh token. On a
+    # cold boot every entry starts up concurrently, so serialize the token
+    # check/refresh per account: the first entry whose stored token is expired
+    # refreshes and persists fresh tokens to every entry for the account; the
+    # rest re-read the updated in-memory store under the lock instead of racing
+    # the now-single-use refresh token at each other.
     domain_data = hass.data.setdefault(DOMAIN, {})
     setup_locks = domain_data.setdefault("_setup_locks", {})
     setup_lock = setup_locks.get(uid)
     if setup_lock is None:
         setup_lock = setup_locks[uid] = asyncio.Lock()
 
+    # Per-account in-memory token store — updated synchronously under the lock
+    # after every successful refresh so sibling entries always see fresh tokens
+    # even before the async config-entry persist has landed.
+    account_tokens = domain_data.setdefault("_account_tokens", {})
+
+    # Per-account reauth guard — once one entry has fired reauth for this uid
+    # on this boot, all others must NOT fire it again (the repair card is
+    # account-wide, not per-device) and should just raise ConfigEntryNotReady
+    # so HA retries setup normally.
+    reauth_fired_key = f"_reauth_fired_{uid}"
+
     async with setup_lock:
-        # A sibling entry for this account may have refreshed the token while we
-        # were waiting for the lock — pick up whatever is current on our entry.
-        current_entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
-        bearer_token = current_entry.data.get(CONF_BEARER_TOKEN, bearer_token)
-        refresh_tok = current_entry.data.get(CONF_REFRESH_TOKEN, refresh_tok)
+        # A sibling entry for this account may have refreshed the token while
+        # we were waiting on the lock. Check the in-memory store first (updated
+        # synchronously before the lock is released) so we always see the
+        # freshest tokens even if the async config-entry persist hasn't landed yet.
+        stored = account_tokens.get(uid, {})
+        bearer_token = stored.get("bearer_token") or entry.data.get(CONF_BEARER_TOKEN, bearer_token)
+        refresh_tok = stored.get("refresh_token") or entry.data.get(CONF_REFRESH_TOKEN, refresh_tok)
 
         try:
             properties = await async_get_tsl(bearer_token, pk, region)
         except LandbookAPIError as exc:
             if "Token validation failed" not in str(exc):
                 raise ConfigEntryNotReady(f"Could not fetch TSL model: {exc}") from exc
+
+            # Token is expired/invalid. Only attempt reauth once per account
+            # per boot — if a sibling entry already fired it, just raise
+            # ConfigEntryNotReady and let HA retry setup normally.
+            if domain_data.get(reauth_fired_key):
+                raise ConfigEntryNotReady(
+                    f"Token invalid for {uid}, reauth already requested — will retry"
+                )
+
             if not refresh_tok:
+                domain_data[reauth_fired_key] = True
                 entry.async_start_reauth(hass)
                 raise ConfigEntryNotReady(
                     "Token expired and no refresh token on file (pre-upgrade entry) — reauth required"
                 )
             try:
                 bearer_token, refresh_tok = await async_refresh_token(bearer_token, refresh_tok, region)
-                # Persist to all entries for this account so a sibling entry picks
-                # up the fresh pair instead of racing the now-rotated refresh token.
+
+                # Update in-memory store SYNCHRONOUSLY before releasing the
+                # lock so sibling entries waiting on the lock see fresh tokens
+                # immediately — the async config-entry persist may lag behind.
+                account_tokens[uid] = {
+                    "bearer_token": bearer_token,
+                    "refresh_token": refresh_tok,
+                }
+
+                # Persist to all entries for this account.
                 for cfg_entry in hass.config_entries.async_entries(DOMAIN):
                     if cfg_entry.data.get(CONF_UID) == uid:
                         hass.config_entries.async_update_entry(
                             cfg_entry,
-                            data={**cfg_entry.data, CONF_BEARER_TOKEN: bearer_token, CONF_REFRESH_TOKEN: refresh_tok},
+                            data={
+                                **cfg_entry.data,
+                                CONF_BEARER_TOKEN: bearer_token,
+                                CONF_REFRESH_TOKEN: refresh_tok,
+                            },
                         )
                 properties = await async_get_tsl(bearer_token, pk, region)
+
             except LandbookAuthError as auth_exc:
-                if "rejected" in str(auth_exc).lower():
-                    entry.async_start_reauth(hass)
-                raise ConfigEntryNotReady(f"Token expired and refresh failed: {auth_exc}") from auth_exc
+                # Refresh token is genuinely dead — fire reauth once for this
+                # account, then let sibling entries just raise ConfigEntryNotReady.
+                if not domain_data.get(reauth_fired_key):
+                    domain_data[reauth_fired_key] = True
+                    if "rejected" in str(auth_exc).lower():
+                        entry.async_start_reauth(hass)
+                raise ConfigEntryNotReady(
+                    f"Token expired and refresh failed: {auth_exc}"
+                ) from auth_exc
             except LandbookAPIError as retry_exc:
-                raise ConfigEntryNotReady(f"Could not fetch TSL model after token refresh: {retry_exc}") from retry_exc
+                raise ConfigEntryNotReady(
+                    f"Could not fetch TSL model after token refresh: {retry_exc}"
+                ) from retry_exc
 
     power_prop        = _find_power_prop(properties)
     speed_prop        = _find_speed_prop(properties, power_prop)
@@ -142,80 +180,114 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     accounts = domain_data.setdefault("_accounts", {})
 
-    if uid not in accounts:
-        # First device for this account — create the shared MQTT client
-        _refresh_lock = threading.Lock()
+    # The shared MQTT client for an account is created by whichever entry
+    # reaches this point first. Every device on the account sets up
+    # concurrently, so without a lock two entries can both pass
+    # `if uid not in accounts` before either finishes connecting — creating
+    # two clients for one account. The broker's client-ID takeover then drops
+    # one session permanently: the device bound to the loser raises "MQTT not
+    # connected" on every command while the other devices keep working on the
+    # surviving session.
+    client_locks = domain_data.setdefault("_client_locks", {})
+    client_lock = client_locks.get(uid)
+    if client_lock is None:
+        client_lock = client_locks[uid] = asyncio.Lock()
 
-        def _token_refresher() -> str:
-            # Serialize refresh attempts — concurrent calls (proactive timer +
-            # MQTT reconnect) would both read the same refresh token, but only
-            # the first succeeds because the token rotates on use.
-            with _refresh_lock:
-                current_token = bearer_token
-                current_refresh = refresh_tok
-                for eid in list(accounts.get(uid, {}).get("entries", set())):
-                    cfg_entry = hass.config_entries.async_get_entry(eid)
-                    if cfg_entry:
-                        current_token = cfg_entry.data.get(CONF_BEARER_TOKEN, bearer_token)
-                        current_refresh = cfg_entry.data.get(CONF_REFRESH_TOKEN, refresh_tok)
-                        break
-                try:
+    async with client_lock:
+        if uid not in accounts:
+            # First device for this account — create the shared MQTT client
+            _refresh_lock = threading.Lock()
+
+            def _token_refresher() -> str:
+                # Serialize refresh attempts — concurrent calls (proactive timer +
+                # MQTT reconnect) would both read the same refresh token, but only
+                # the first succeeds because the token rotates on use.
+                with _refresh_lock:
+                    # Read from in-memory store first — it is updated synchronously
+                    # under the lock after every successful refresh, so it is always
+                    # more up-to-date than the async-persisted config entry data.
+                    stored_rt = account_tokens.get(uid, {})
+                    current_token = stored_rt.get("bearer_token", bearer_token)
+                    current_refresh = stored_rt.get("refresh_token", refresh_tok)
+
                     if not current_refresh:
-                        raise LandbookAuthError("No refresh token on file (pre-upgrade entry) — reauth required")
-                    new_token, new_refresh = refresh_token(current_token, current_refresh, region)
-                except LandbookAuthError as exc:
-                    _LOGGER.warning("Token rejected for %s, triggering reauth: %s", uid, exc)
-                    accounts.get(uid, {}).get("client") and accounts[uid]["client"].halt_reconnects()
-                    for eid in list(accounts.get(uid, {}).get("entries", set())):
-                        cfg_entry = hass.config_entries.async_get_entry(eid)
-                        if cfg_entry:
-                            hass.loop.call_soon_threadsafe(
-                                hass.async_create_task,
-                                _async_trigger_reauth(hass, cfg_entry),
+                        # Fall back to config entry data on very first call.
+                        for eid in list(accounts.get(uid, {}).get("entries", set())):
+                            cfg_entry = hass.config_entries.async_get_entry(eid)
+                            if cfg_entry:
+                                current_token = cfg_entry.data.get(CONF_BEARER_TOKEN, bearer_token)
+                                current_refresh = cfg_entry.data.get(CONF_REFRESH_TOKEN, refresh_tok)
+                                break
+
+                    try:
+                        if not current_refresh:
+                            raise LandbookAuthError(
+                                "No refresh token on file (pre-upgrade entry) — reauth required"
                             )
-                    raise
-                except Exception as exc:
-                    _LOGGER.warning("Token refresh failed for %s (network?), will retry: %s", uid, exc)
-                    raise
-                hass.loop.call_soon_threadsafe(
-                    hass.async_create_task,
-                    _async_persist_token_for_account(hass, uid, new_token, new_refresh),
-                )
-                return new_token
+                        new_token, new_refresh = refresh_token(current_token, current_refresh, region)
+                    except LandbookAuthError as exc:
+                        _LOGGER.warning("Token rejected for %s, triggering reauth: %s", uid, exc)
+                        if accounts.get(uid, {}).get("client"):
+                            accounts[uid]["client"].halt_reconnects()
+                        for eid in list(accounts.get(uid, {}).get("entries", set())):
+                            cfg_entry = hass.config_entries.async_get_entry(eid)
+                            if cfg_entry:
+                                hass.loop.call_soon_threadsafe(
+                                    hass.async_create_task,
+                                    _async_trigger_reauth(hass, cfg_entry),
+                                )
+                        raise
+                    except Exception as exc:
+                        _LOGGER.warning(
+                            "Token refresh failed for %s (network?), will retry: %s", uid, exc
+                        )
+                        raise
 
-        mqtt_client = LandbookMQTTClient(
-            uid, bearer_token,
-            mqtt_host=region_cfg["mqtt_host"],
-            token_refresher=_token_refresher,
-        )
-        try:
-            await hass.async_add_executor_job(mqtt_client.connect)
-        except ConnectionError as exc:
-            raise ConfigEntryNotReady(f"MQTT connection failed: {exc}") from exc
+                    # Update in-memory store synchronously before releasing the
+                    # threading lock so concurrent threads see fresh tokens immediately.
+                    account_tokens[uid] = {
+                        "bearer_token": new_token,
+                        "refresh_token": new_refresh,
+                    }
+                    hass.loop.call_soon_threadsafe(
+                        hass.async_create_task,
+                        _async_persist_token_for_account(hass, uid, new_token, new_refresh),
+                    )
+                    return new_token
 
-        # The access token is only valid for 2 hours and the MQTT connection
-        # can otherwise sit open well past that without ever reconnecting, so
-        # refresh proactively on a schedule instead of only reacting to a
-        # disconnect or a failed REST call.
-        async def _proactive_token_refresh(_now: object = None) -> None:
+            mqtt_client = LandbookMQTTClient(
+                uid, bearer_token,
+                mqtt_host=region_cfg["mqtt_host"],
+                token_refresher=_token_refresher,
+            )
             try:
-                await hass.async_add_executor_job(_token_refresher)
-            except Exception as exc:  # noqa: BLE001 — already logged/handled above
-                _LOGGER.debug("Proactive token refresh for %s did not succeed: %s", uid, exc)
+                await hass.async_add_executor_job(mqtt_client.connect)
+            except ConnectionError as exc:
+                raise ConfigEntryNotReady(f"MQTT connection failed: {exc}") from exc
 
-        cancel_proactive_refresh = async_track_time_interval(
-            hass, _proactive_token_refresh, timedelta(seconds=PROACTIVE_TOKEN_REFRESH_INTERVAL)
-        )
+            # The access token is only valid for 2 hours and the MQTT connection
+            # can otherwise sit open well past that without ever reconnecting, so
+            # refresh proactively on a schedule instead of only reacting to a
+            # disconnect or a failed REST call.
+            async def _proactive_token_refresh(_now: object = None) -> None:
+                try:
+                    await hass.async_add_executor_job(_token_refresher)
+                except Exception as exc:  # noqa: BLE001 — already logged/handled above
+                    _LOGGER.debug("Proactive token refresh for %s did not succeed: %s", uid, exc)
 
-        accounts[uid] = {
-            "client": mqtt_client,
-            "entries": set(),
-            "cancel_proactive_refresh": cancel_proactive_refresh,
-        }
-        _LOGGER.info("Landbook: shared MQTT connection established for account %s", uid)
-    else:
-        mqtt_client = accounts[uid]["client"]
-        _LOGGER.debug("Landbook: reusing shared MQTT connection for account %s", uid)
+            cancel_proactive_refresh = async_track_time_interval(
+                hass, _proactive_token_refresh, timedelta(seconds=PROACTIVE_TOKEN_REFRESH_INTERVAL)
+            )
+
+            accounts[uid] = {
+                "client": mqtt_client,
+                "entries": set(),
+                "cancel_proactive_refresh": cancel_proactive_refresh,
+            }
+            _LOGGER.info("Landbook: shared MQTT connection established for account %s", uid)
+        else:
+            mqtt_client = accounts[uid]["client"]
+            _LOGGER.debug("Landbook: reusing shared MQTT connection for account %s", uid)
 
     accounts[uid]["entries"].add(entry.entry_id)
 
@@ -277,20 +349,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 online = bool(status)
                 if entry_data["online"] != online:
                     entry_data["online"] = online
-                    _LOGGER.info("Landbook device %s went %s", dk, "online" if online else "offline")
+                    _LOGGER.info(
+                        "Landbook device %s went %s", dk, "online" if online else "offline"
+                    )
                     hass.loop.call_soon_threadsafe(
                         hass.async_create_task,
                         _async_update_entities(hass, entry.entry_id, None),
                     )
             else:
-                _LOGGER.warning("onl_ payload for %s had no recognised status key: %s", dk, payload)
+                _LOGGER.warning(
+                    "onl_ payload for %s had no recognised status key: %s", dk, payload
+                )
 
     mqtt_client.subscribe_device(device_id, _mqtt_callback)
 
     # On (re)connect, request state for ALL devices on this account
     def _request_all_states() -> None:
         for eid, edata in hass.data.get(DOMAIN, {}).items():
-            if eid in ("_accounts", "_setup_locks") or not isinstance(edata, dict):
+            if eid in ("_accounts", "_setup_locks", "_account_tokens") or not isinstance(edata, dict):
                 continue
             if edata.get("uid") == uid:
                 mqtt_client.send_read(
@@ -300,7 +376,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     mqtt_client._on_reconnect = _request_all_states
     mqtt_client.send_read(device_id, pk, dk, [p["code"] for p in properties])
 
-    # Also seed initial state from REST API as a fallback
+    # Seed initial state from REST API as a fallback
     try:
         attrs = await async_get_device_attributes(bearer_token, pk, dk, region)
         _LOGGER.debug("getDeviceBusinessAttributes raw response for %s: %s", dk, attrs)
@@ -409,7 +485,9 @@ async def _async_trigger_reauth(hass: HomeAssistant, entry: ConfigEntry) -> None
     entry.async_start_reauth(hass)
 
 
-async def _async_persist_token_for_account(hass: HomeAssistant, uid: str, token: str, refresh_tok: str) -> None:
+async def _async_persist_token_for_account(
+    hass: HomeAssistant, uid: str, token: str, refresh_tok: str
+) -> None:
     """Persist a refreshed access/refresh token pair to all config entries for this account."""
     accounts = hass.data.get(DOMAIN, {}).get("_accounts", {})
     for eid in list(accounts.get(uid, {}).get("entries", set())):
@@ -431,7 +509,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if uid and uid in accounts:
             accounts[uid]["entries"].discard(entry.entry_id)
             if not accounts[uid]["entries"]:
-                # Last device for this account — disconnect
+                # Last device for this account — disconnect and clean up
                 client: LandbookMQTTClient = accounts[uid]["client"]
                 await hass.async_add_executor_job(client.disconnect)
                 cancel_proactive_refresh = accounts[uid].get("cancel_proactive_refresh")
@@ -439,12 +517,20 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     cancel_proactive_refresh()
                 del accounts[uid]
                 domain_data.get("_setup_locks", {}).pop(uid, None)
+                domain_data.get("_client_locks", {}).pop(uid, None)
+                domain_data.get("_account_tokens", {}).pop(uid, None)
+                # Clear the reauth-fired guard so a fresh boot starts clean
+                domain_data.pop(f"_reauth_fired_{uid}", None)
                 _LOGGER.info("Landbook: shared MQTT connection closed for account %s", uid)
     return unload_ok
 
 
-async def _async_update_entities(hass: HomeAssistant, entry_id: str, changed_keys: set[str] | None = None) -> None:
-    hass.bus.async_fire(f"{DOMAIN}_state_update_{entry_id}", {"changed_keys": changed_keys or set()})
+async def _async_update_entities(
+    hass: HomeAssistant, entry_id: str, changed_keys: set[str] | None = None
+) -> None:
+    hass.bus.async_fire(
+        f"{DOMAIN}_state_update_{entry_id}", {"changed_keys": changed_keys or set()}
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -548,8 +634,8 @@ def _find_temperature_prop(
             for hint in TEMPERATURE_NAME_HINTS
         ):
             return p
-    # Temperature may not be in the writable TSL but still arrive in bus_ reports
-    # Return a synthetic prop so the sensor entity knows to watch for it
+    # Temperature may not be in the writable TSL but still arrive in bus_ reports.
+    # Return a synthetic prop so the sensor entity knows to watch for it.
     return {"code": "temperature", "name": "Temperature", "dataType": "INT", "synthetic": True}
 
 

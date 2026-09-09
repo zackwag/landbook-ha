@@ -140,15 +140,23 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except Exception:  # noqa: BLE001
                 errors["base"] = "cannot_connect"
             else:
-                self.hass.config_entries.async_update_entry(
-                    reauth_entry,
-                    data={
-                        **reauth_entry.data,
-                        CONF_BEARER_TOKEN: bearer_token,
-                        CONF_REFRESH_TOKEN: refresh_token,
-                        CONF_UID: uid,
-                    },
-                )
+                # A fresh login rotates the account's single-use refresh token,
+                # so every entry that wasn't this one is now holding a stale
+                # copy and will force another reauth on its next setup attempt.
+                # Persist to all entries for this account so one login heals
+                # every device. Entries stuck retrying ConfigEntryNotReady
+                # re-read entry.data on each attempt, so they recover on their
+                # own once the data lands.
+                for cfg_entry in self.hass.config_entries.async_entries(DOMAIN):
+                    if cfg_entry.data.get(CONF_UID) == uid:
+                        self.hass.config_entries.async_update_entry(
+                            cfg_entry,
+                            data={
+                                **cfg_entry.data,
+                                CONF_BEARER_TOKEN: bearer_token,
+                                CONF_REFRESH_TOKEN: refresh_token,
+                            },
+                        )
                 await self.hass.config_entries.async_reload(reauth_entry.entry_id)
                 return self.async_abort(reason="reauth_successful")
 
