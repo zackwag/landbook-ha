@@ -101,16 +101,32 @@ fi
 mv /tmp/changelog_new.txt "$CHANGELOG"
 echo "Updated $CHANGELOG"
 
-# --- Commit, tag, push ---
+# --- Commit on a release branch, open PR ---
+BRANCH="release/${TAG}"
+git checkout -b "$BRANCH"
 git add .
-
 git commit -m "$MESSAGE"
-git tag "$TAG"
 
 echo ""
-echo "Pushing to origin/main..."
-git push origin main
-git push origin "$TAG"
+echo "Pushing release branch..."
+git push -u origin "$BRANCH"
 
 echo ""
-echo "Done. Release $TAG is live."
+echo "Creating pull request..."
+PR_URL=$(gh pr create --base main --head "$BRANCH" \
+  --title "$TAG" \
+  --body "$(cat <<PRBODY
+## Release $TAG
+
+- **Version:** $CURRENT → $NEW_VERSION
+- $MESSAGE
+PRBODY
+)")
+
+git checkout main
+
+echo ""
+echo "Pull request created: $PR_URL"
+echo ""
+echo "After the PR is merged, tag the release:"
+echo "  git pull origin main && git tag $TAG && git push origin $TAG"

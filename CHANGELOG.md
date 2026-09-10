@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.12] - 2026-09-10
+
+- unload-race-fix: safer account lookup in async_unload_entry using .get() and .pop() (#15)
+- Add PR test workflow- Fix unload race condition for shared accounts
+
+
+
 ## [1.3.11] - 2026-09-09
 
 - fix: persist latest tokens on unload and push fresh token to MQTT client (#13)
