@@ -441,9 +441,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry_data = domain_data.pop(entry.entry_id, {})
         uid = entry_data.get("uid")
         accounts = domain_data.get("_accounts", {})
-        if uid and uid in accounts:
-            accounts[uid]["entries"].discard(entry.entry_id)
-            if not accounts[uid]["entries"]:
+        acct = accounts.get(uid) if uid else None
+        if acct is not None:
+            acct["entries"].discard(entry.entry_id)
+            if not acct["entries"]:
                 # Last device for this account — persist the account's latest
                 # token pair before tearing down. The runtime refresher persists
                 # rotations fire-and-forget; on a reboot or reload that task may
@@ -467,12 +468,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             "Landbook: could not persist latest token for %s on unload: %s", uid, exc
                         )
 
-                client: LandbookMQTTClient = accounts[uid]["client"]
+                client: LandbookMQTTClient = acct["client"]
                 await hass.async_add_executor_job(client.disconnect)
-                cancel_proactive_refresh = accounts[uid].get("cancel_proactive_refresh")
+                cancel_proactive_refresh = acct.get("cancel_proactive_refresh")
                 if cancel_proactive_refresh:
                     cancel_proactive_refresh()
-                del accounts[uid]
+                accounts.pop(uid, None)
                 domain_data.get("_setup_locks", {}).pop(uid, None)
                 domain_data.get("_client_locks", {}).pop(uid, None)
                 domain_data.get("_account_tokens", {}).pop(uid, None)
