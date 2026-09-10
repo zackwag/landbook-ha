@@ -66,6 +66,42 @@ class TestUnloadEntry:
         assert "e2" in hass.data[DOMAIN]["_accounts"]["u1"]["entries"]
 
     @pytest.mark.asyncio
+    async def test_unload_race_account_deleted_during_disconnect(self, mock_landbook_api):
+        """Unload must not KeyError if another coroutine deletes the account mid-teardown.
+
+        Simulates the race: while one coroutine is awaiting client.disconnect,
+        another coroutine removes accounts[uid].  When the first resumes it
+        must not crash on accounts[uid].
+        """
+        from custom_components.landbook import async_setup, async_setup_entry, async_unload_entry
+
+        hass = make_hass()
+        api = mock_landbook_api
+        api.refresh_token.return_value = ("tok_v2", "ref_v2")
+
+        entry = make_config_entry(hass, entry_id="e1", uid="u1")
+        register_entry(hass, entry)
+
+        await async_setup(hass, {})
+        await async_setup_entry(hass, entry)
+
+        hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+
+        accounts = hass.data[DOMAIN]["_accounts"]
+
+        async def _executor_that_deletes_account(fn, *args):
+            """Run disconnect, then delete the account key to mimic a racing coroutine."""
+            fn(*args)
+            accounts.pop("u1", None)
+
+        hass.async_add_executor_job = _executor_that_deletes_account
+
+        result = await async_unload_entry(hass, entry)
+
+        assert result is True
+        assert "u1" not in accounts
+
+    @pytest.mark.asyncio
     async def test_unload_failure_preserves_data(self, mock_landbook_api):
         """If platform unload fails, entry data should be preserved."""
         from custom_components.landbook import async_setup, async_setup_entry, async_unload_entry
