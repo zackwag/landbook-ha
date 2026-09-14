@@ -4,9 +4,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from typing import Any
+from typing import Any, Callable
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
@@ -55,6 +55,45 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     hass.data.setdefault(DOMAIN, {})
     return True
+
+
+def _serialize_shared_client(mqtt_client: LandbookMQTTClient, lock: threading.RLock) -> LandbookMQTTClient:
+    """Serialize socket ops on the account-shared paho client.
+
+    The one client per account is written from the event loop (setup
+    send_read, platform send_write) *and* from paho's network thread
+    (on_connect -> _request_all_states). Concurrent publishes collide on
+    paho's internal _sendbuffer and raise BufferError ("Existing exports of
+    data: object cannot be re-sized"), taking a config entry down with
+    setup_error / failed_unload. A per-account lock around every wire
+    operation removes the race.
+    """
+
+    class _Serialized:
+        _WIRE_OPS = {"send_read", "send_write", "subscribe_device", "disconnect"}
+
+        def __init__(self) -> None:
+            object.__setattr__(self, "_wrapped", mqtt_client)
+            object.__setattr__(self, "_lock", lock)
+
+        def __getattr__(self, name: str) -> Any:
+            attr = getattr(self._wrapped, name)
+            if name in self._WIRE_OPS:
+                def guarded(*args: Any, **kwargs: Any) -> Any:
+                    with self._lock:
+                        return attr(*args, **kwargs)
+                return guarded
+            return attr
+
+        @property
+        def _on_reconnect(self) -> Callable[[], None] | None:
+            return self._wrapped._on_reconnect
+
+        @_on_reconnect.setter
+        def _on_reconnect(self, value: Callable[[], None] | None) -> None:
+            self._wrapped._on_reconnect = value
+
+    return _Serialized()  # type: ignore[return-value]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -220,6 +259,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 hass, _proactive_token_refresh, timedelta(seconds=PROACTIVE_TOKEN_REFRESH_INTERVAL)
             )
 
+            mqtt_client = _serialize_shared_client(
+                mqtt_client,
+                domain_data.setdefault("_socket_locks", {}).setdefault(uid, threading.RLock()),
+            )
+
             accounts[uid] = {
                 "client": mqtt_client,
                 "entries": set(),
@@ -356,6 +400,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    if entry.state is not ConfigEntryState.LOADED:
+        # A failed_unload / setup_error entry must not be reloaded — reload
+        # raises OperationNotAllowed and re-enters the shared-connection
+        # teardown that races the paho sendbuffer. Each token persist fires
+        # the options listener, so without this guard a broken entry spams
+        # OperationNotAllowed and can tear down the healthy sibling's MQTT
+        # connection.
+        return
     await hass.config_entries.async_reload(entry.entry_id)
 
 
@@ -476,6 +528,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 accounts.pop(uid, None)
                 domain_data.get("_setup_locks", {}).pop(uid, None)
                 domain_data.get("_client_locks", {}).pop(uid, None)
+                domain_data.get("_socket_locks", {}).pop(uid, None)
                 domain_data.get("_account_tokens", {}).pop(uid, None)
                 domain_data.pop(f"_reauth_fired_{uid}", None)
                 _LOGGER.info("Landbook: shared MQTT connection closed for account %s", uid)
