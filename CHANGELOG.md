@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.13] - 2026-09-15
+
+- Require landbook-api>=0.1.1, which serializes MQTT wire operations in the client itself and fixes a BufferError ("Existing exports of data: object cannot be re-sized") from concurrent publish() on a shared account's MQTT client (#18)
+- Skip reload for a config entry that isn't LOADED, so a failed_unload/setup_error entry can't spam OperationNotAllowed when a sibling entry's token refresh fires the options-update listener (#19)
+
+
+
 ## [1.3.12] - 2026-09-10
 
 - unload-race-fix: safer account lookup in async_unload_entry using .get() and .pop() (#15)
