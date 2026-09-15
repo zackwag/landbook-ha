@@ -6,7 +6,7 @@ import logging
 import threading
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
@@ -356,6 +356,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    if entry.state is not ConfigEntryState.LOADED:
+        # A failed_unload / setup_error entry must not be reloaded — reload
+        # raises OperationNotAllowed on an entry that isn't LOADED. Each
+        # token persist fires the options listener for every sibling entry
+        # on the account, so without this guard a broken entry spams
+        # OperationNotAllowed on every refresh.
+        return
     await hass.config_entries.async_reload(entry.entry_id)
 
 
