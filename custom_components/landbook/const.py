@@ -21,6 +21,9 @@ TEMP_UNIT_F = "°F"
 TEMP_UNIT_C = "°C"
 CONF_SIGNAL_STRENGTH = "signal_strength_enabled"
 SIGNAL_STRENGTH_POLL_INTERVAL = 300  # seconds
+CONF_MQTT_WATCHDOG_ENABLED = "mqtt_watchdog_enabled"
+MQTT_WATCHDOG_CHECK_INTERVAL = 30   # seconds between dead-link checks
+MQTT_WATCHDOG_STALE_INTERVAL = 300  # zero-inbound-MQTT time before forcing reconnect
 
 # Access tokens are issued with a 2-hour TTL (JWT exp - iat). Refresh well
 # before that so the shared MQTT connection and REST calls never see an

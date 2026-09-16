@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -30,6 +31,7 @@ from .const import (
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
     CONF_FW_VERSION,
+    CONF_MQTT_WATCHDOG_ENABLED,
     CONF_PRODUCT_KEY,
     CONF_REFRESH_TOKEN,
     CONF_REGION,
@@ -37,6 +39,8 @@ from .const import (
     CONF_UID,
     DISPLAY_LIGHT_HINTS,
     DOMAIN,
+    MQTT_WATCHDOG_CHECK_INTERVAL,
+    MQTT_WATCHDOG_STALE_INTERVAL,
     PROACTIVE_TOKEN_REFRESH_INTERVAL,
     SIGNAL_STRENGTH_POLL_INTERVAL,
     TEMPERATURE_NAME_HINTS,
@@ -50,6 +54,71 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["fan", "light", "number", "select", "sensor", "switch"]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+_WRITE_RETRY_WINDOW = 5.0  # seconds
+
+
+class _ResilientMQTTClient(LandbookMQTTClient):
+    """MQTT client that queues writes across a short disconnect instead of failing.
+
+    landbook_api's send_write raises ConnectionError when the broker connection
+    is down (e.g. during the 90-minute token-rotation reconnect), which fails
+    the service call and loses the tap. This subclass parks such writes and
+    flushes them on reconnect, dropping anything older than _WRITE_RETRY_WINDOW
+    so a tap during a long outage is not applied minutes later.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._write_lock = threading.Lock()
+        self._deferred_writes: list[tuple[float, str, str, str, dict]] = []
+
+    def send_write(self, device_id: str, pk: str, dk: str, props: dict) -> None:
+        try:
+            super().send_write(device_id, pk, dk, props)
+        except ConnectionError:
+            with self._write_lock:
+                self._deferred_writes.append(
+                    (time.monotonic() + _WRITE_RETRY_WINDOW, device_id, pk, dk, props)
+                )
+            _LOGGER.info(
+                "Landbook: write to %s deferred (MQTT down), will resend on reconnect", dk
+            )
+
+    def flush_deferred(self) -> None:
+        now = time.monotonic()
+        with self._write_lock:
+            idx = 0
+            while idx < len(self._deferred_writes):
+                deadline, device_id, pk, dk, props = self._deferred_writes[idx]
+                if now > deadline:
+                    _LOGGER.info(
+                        "Landbook: dropping deferred write to %s (expired while disconnected)",
+                        dk,
+                    )
+                    idx += 1
+                    continue
+                try:
+                    super().send_write(device_id, pk, dk, props)
+                except ConnectionError:
+                    break
+                idx += 1
+            if idx:
+                del self._deferred_writes[:idx]
+
+    def force_reconnect(self) -> None:
+        """Tear down and rebuild the MQTT connection from scratch."""
+        with self._wire_lock:
+            self._shutting_down = False
+            if self._reconnect_timer:
+                self._reconnect_timer.cancel()
+                self._reconnect_timer = None
+            if self._client:
+                self._client.loop_stop()
+                self._client.disconnect()
+                self._client = None
+            self._connected = False
+        self.connect()
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -199,7 +268,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     )
                     return new_token
 
-            mqtt_client = LandbookMQTTClient(
+            mqtt_client = _ResilientMQTTClient(
                 uid, bearer_token,
                 mqtt_host=region_cfg["mqtt_host"],
                 token_refresher=_token_refresher,
@@ -207,6 +276,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             try:
                 await hass.async_add_executor_job(mqtt_client.connect)
             except ConnectionError as exc:
+                # connect() may have left a started paho loop behind (especially
+                # if the installed landbook-api predates the timeout-cleanup fix) —
+                # tear it down so a failed setup doesn't leak a client that keeps
+                # reconnecting in the background with "Not authorized" spam.
+                await hass.async_add_executor_job(mqtt_client.disconnect)
                 raise ConfigEntryNotReady(f"MQTT connection failed: {exc}") from exc
 
             async def _proactive_token_refresh(_now: object = None) -> None:
@@ -220,10 +294,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 hass, _proactive_token_refresh, timedelta(seconds=PROACTIVE_TOKEN_REFRESH_INTERVAL)
             )
 
+            def _account_watchdog_enabled() -> bool:
+                for eid in list(accounts.get(uid, {}).get("entries", set())):
+                    cfg_entry = hass.config_entries.async_get_entry(eid)
+                    if cfg_entry and cfg_entry.options.get(CONF_MQTT_WATCHDOG_ENABLED, True):
+                        return True
+                return False
+
+            async def _mqtt_watchdog(_now: object = None) -> None:
+                try:
+                    if not _account_watchdog_enabled():
+                        return
+                    acct = accounts.get(uid)
+                    last = acct.get("last_activity") if acct else None
+                    if last is None:
+                        return
+                    if time.monotonic() - last > MQTT_WATCHDOG_STALE_INTERVAL:
+                        _LOGGER.warning(
+                            "Landbook: no MQTT message for account %s in %.0fs — forcing reconnect",
+                            uid, MQTT_WATCHDOG_STALE_INTERVAL,
+                        )
+                        await hass.async_add_executor_job(mqtt_client.force_reconnect)
+                        if accounts.get(uid):
+                            accounts[uid]["last_activity"] = time.monotonic()
+                except Exception as exc:  # noqa: BLE001
+                    _LOGGER.debug("MQTT watchdog for %s failed: %s", uid, exc)
+
+            cancel_watchdog = async_track_time_interval(
+                hass, _mqtt_watchdog, timedelta(seconds=MQTT_WATCHDOG_CHECK_INTERVAL)
+            )
+
             accounts[uid] = {
                 "client": mqtt_client,
                 "entries": set(),
                 "cancel_proactive_refresh": cancel_proactive_refresh,
+                "cancel_watchdog": cancel_watchdog,
+                "last_activity": time.monotonic(),
             }
             _LOGGER.info("Landbook: shared MQTT connection established for account %s", uid)
         else:
@@ -255,6 +361,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
         if entry_data is None:
             return
+
+        accounts = hass.data.get(DOMAIN, {}).get("_accounts", {})
+        if accounts.get(uid):
+            accounts[uid]["last_activity"] = time.monotonic()
 
         if suffix == "bus_":
             data_block = payload.get("data", payload)
@@ -310,7 +420,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     edata["device_id"], edata["pk"], edata["dk"], edata["all_codes"]
                 )
 
-    mqtt_client._on_reconnect = _request_all_states
+    def _on_reconnect_handler() -> None:
+        mqtt_client.flush_deferred()
+        _request_all_states()
+
+    mqtt_client._on_reconnect = _on_reconnect_handler
     mqtt_client.send_read(device_id, pk, dk, [p["code"] for p in properties])
 
     # Also seed initial state from REST API as a fallback
@@ -480,6 +594,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 cancel_proactive_refresh = acct.get("cancel_proactive_refresh")
                 if cancel_proactive_refresh:
                     cancel_proactive_refresh()
+                cancel_watchdog = acct.get("cancel_watchdog")
+                if cancel_watchdog:
+                    cancel_watchdog()
                 accounts.pop(uid, None)
                 domain_data.get("_setup_locks", {}).pop(uid, None)
                 domain_data.get("_client_locks", {}).pop(uid, None)
