@@ -15,6 +15,7 @@ from .const import (
     CONF_DEVICE_KEY,
     CONF_DEVICE_NAME,
     CONF_EMAIL,
+    CONF_MQTT_WATCHDOG_ENABLED,
     CONF_PASSWORD,
     CONF_PRODUCT_KEY,
     CONF_PRODUCT_NAME,
@@ -50,12 +51,17 @@ class LandbookOptionsFlow(config_entries.OptionsFlow):
             CONF_SIGNAL_STRENGTH,
             self.config_entry.data.get(CONF_SIGNAL_STRENGTH, False),
         )
+        current_watchdog = self.config_entry.options.get(
+            CONF_MQTT_WATCHDOG_ENABLED,
+            self.config_entry.data.get(CONF_MQTT_WATCHDOG_ENABLED, True),
+        )
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_TEMP_UNIT, default=current_unit): vol.In([TEMP_UNIT_F, TEMP_UNIT_C]),
                     vol.Required(CONF_SIGNAL_STRENGTH, default=current_signal): bool,
+                    vol.Required(CONF_MQTT_WATCHDOG_ENABLED, default=current_watchdog): bool,
                 }
             ),
         )

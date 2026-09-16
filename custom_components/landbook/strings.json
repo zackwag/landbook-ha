@@ -39,11 +39,13 @@
         "title": "Landbook Options",
         "data": {
           "temperature_unit": "Temperature unit",
-          "signal_strength_enabled": "Show Wi-Fi signal strength sensor"
+          "signal_strength_enabled": "Show Wi-Fi signal strength sensor",
+          "mqtt_watchdog_enabled": "Auto-reconnect MQTT if stalled"
         },
         "data_description": {
           "temperature_unit": "The device always reports temperature in °F. Selecting °C converts the value for display.",
-          "signal_strength_enabled": "Adds a Wi-Fi signal strength sensor (dBm). Requires a REST API call every 5 minutes — enable only if you need it."
+          "signal_strength_enabled": "Adds a Wi-Fi signal strength sensor (dBm). Requires a REST API call every 5 minutes — enable only if you need it.",
+          "mqtt_watchdog_enabled": "If no MQTT message arrives for 5 minutes, force a reconnect. Fixes silent connection drops that the broker never reports."
         }
       }
     }

@@ -16,7 +16,7 @@ def mock_landbook_api():
         patch("custom_components.landbook.async_refresh_token", new_callable=AsyncMock) as mock_async_refresh,
         patch("custom_components.landbook.refresh_token") as mock_sync_refresh,
         patch("custom_components.landbook.async_get_device_attributes", new_callable=AsyncMock) as mock_attrs,
-        patch("custom_components.landbook.LandbookMQTTClient") as mock_mqtt_cls,
+        patch("custom_components.landbook._ResilientMQTTClient") as mock_mqtt_cls,
     ):
         mock_mqtt = MagicMock()
         mock_mqtt.connect = MagicMock()
