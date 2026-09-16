@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -50,6 +51,57 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["fan", "light", "number", "select", "sensor", "switch"]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+_WRITE_RETRY_WINDOW = 5.0  # seconds
+
+
+class _ResilientMQTTClient(LandbookMQTTClient):
+    """MQTT client that queues writes across a short disconnect instead of failing.
+
+    landbook_api's send_write raises ConnectionError when the broker connection
+    is down (e.g. during the 90-minute token-rotation reconnect), which fails
+    the service call and loses the tap. This subclass parks such writes and
+    flushes them on reconnect, dropping anything older than _WRITE_RETRY_WINDOW
+    so a tap during a long outage is not applied minutes later.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._write_lock = threading.Lock()
+        self._deferred_writes: list[tuple[float, str, str, str, dict]] = []
+
+    def send_write(self, device_id: str, pk: str, dk: str, props: dict) -> None:
+        try:
+            super().send_write(device_id, pk, dk, props)
+        except ConnectionError:
+            with self._write_lock:
+                self._deferred_writes.append(
+                    (time.monotonic() + _WRITE_RETRY_WINDOW, device_id, pk, dk, props)
+                )
+            _LOGGER.info(
+                "Landbook: write to %s deferred (MQTT down), will resend on reconnect", dk
+            )
+
+    def flush_deferred(self) -> None:
+        now = time.monotonic()
+        with self._write_lock:
+            idx = 0
+            while idx < len(self._deferred_writes):
+                deadline, device_id, pk, dk, props = self._deferred_writes[idx]
+                if now > deadline:
+                    _LOGGER.info(
+                        "Landbook: dropping deferred write to %s (expired while disconnected)",
+                        dk,
+                    )
+                    idx += 1
+                    continue
+                try:
+                    super().send_write(device_id, pk, dk, props)
+                except ConnectionError:
+                    break
+                idx += 1
+            if idx:
+                del self._deferred_writes[:idx]
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -199,7 +251,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     )
                     return new_token
 
-            mqtt_client = LandbookMQTTClient(
+            mqtt_client = _ResilientMQTTClient(
                 uid, bearer_token,
                 mqtt_host=region_cfg["mqtt_host"],
                 token_refresher=_token_refresher,
@@ -310,7 +362,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     edata["device_id"], edata["pk"], edata["dk"], edata["all_codes"]
                 )
 
-    mqtt_client._on_reconnect = _request_all_states
+    def _on_reconnect_handler() -> None:
+        mqtt_client.flush_deferred()
+        _request_all_states()
+
+    mqtt_client._on_reconnect = _on_reconnect_handler
     mqtt_client.send_read(device_id, pk, dk, [p["code"] for p in properties])
 
     # Also seed initial state from REST API as a fallback
