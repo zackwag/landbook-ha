@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/zackwag/landbook-ha/compare/v1.3.14...v1.4.0) (2026-09-17)
+
+
+### Features
+
+* **ci:** adopt release-please ([#29](https://github.com/zackwag/landbook-ha/issues/29)) ([4f3218d](https://github.com/zackwag/landbook-ha/commit/4f3218d008335a6d2b29e33f5c5870bb66b80370))
+
 ## [1.3.14] - 2026-09-17
 
 - Add MQTT watchdog: new `mqtt_watchdog_enabled` option (default on) forces a reconnect when no inbound MQTT message has arrived for 5 minutes, closing a silent-connection-drop gap the broker never reports (#24)
@@ -253,4 +260,3 @@
 ## [1.1.6] - 2026-06-16
 
 - Add changelog generation to release script, fix .gitignore
-
