@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.14] - 2026-09-17
+
+- Add MQTT watchdog: new `mqtt_watchdog_enabled` option (default on) forces a reconnect when no inbound MQTT message has arrived for 5 minutes, closing a silent-connection-drop gap the broker never reports (#24)
+- Require landbook-api>=0.2.0: `send_write` now queues a write across a brief disconnect (e.g. during token-rotation) instead of raising and losing it, and `connect()` cleans up a half-started client before raising on a timeout instead of leaking a background thread (#24)
+
 ## [1.3.13] - 2026-09-15
 
 - Require landbook-api>=0.1.1, which serializes MQTT wire operations in the client itself and fixes a BufferError ("Existing exports of data: object cannot be re-sized") from concurrent publish() on a shared account's MQTT client (#18)
