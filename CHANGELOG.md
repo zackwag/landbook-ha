@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/zackwag/landbook-ha/compare/v1.4.0...v1.4.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* **ci:** use RELEASE_PLEASE_TOKEN so releases trigger downstream workflows ([#31](https://github.com/zackwag/landbook-ha/issues/31)) ([9b35201](https://github.com/zackwag/landbook-ha/commit/9b35201cae6876c2a6dcae96dfa92c9d01e2d19c))
+
 ## [1.4.0](https://github.com/zackwag/landbook-ha/compare/v1.3.14...v1.4.0) (2026-09-17)
 
 
