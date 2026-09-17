@@ -55,71 +55,6 @@ PLATFORMS = ["fan", "light", "number", "select", "sensor", "switch"]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-_WRITE_RETRY_WINDOW = 5.0  # seconds
-
-
-class _ResilientMQTTClient(LandbookMQTTClient):
-    """MQTT client that queues writes across a short disconnect instead of failing.
-
-    landbook_api's send_write raises ConnectionError when the broker connection
-    is down (e.g. during the 90-minute token-rotation reconnect), which fails
-    the service call and loses the tap. This subclass parks such writes and
-    flushes them on reconnect, dropping anything older than _WRITE_RETRY_WINDOW
-    so a tap during a long outage is not applied minutes later.
-    """
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._write_lock = threading.Lock()
-        self._deferred_writes: list[tuple[float, str, str, str, dict]] = []
-
-    def send_write(self, device_id: str, pk: str, dk: str, props: dict) -> None:
-        try:
-            super().send_write(device_id, pk, dk, props)
-        except ConnectionError:
-            with self._write_lock:
-                self._deferred_writes.append(
-                    (time.monotonic() + _WRITE_RETRY_WINDOW, device_id, pk, dk, props)
-                )
-            _LOGGER.info(
-                "Landbook: write to %s deferred (MQTT down), will resend on reconnect", dk
-            )
-
-    def flush_deferred(self) -> None:
-        now = time.monotonic()
-        with self._write_lock:
-            idx = 0
-            while idx < len(self._deferred_writes):
-                deadline, device_id, pk, dk, props = self._deferred_writes[idx]
-                if now > deadline:
-                    _LOGGER.info(
-                        "Landbook: dropping deferred write to %s (expired while disconnected)",
-                        dk,
-                    )
-                    idx += 1
-                    continue
-                try:
-                    super().send_write(device_id, pk, dk, props)
-                except ConnectionError:
-                    break
-                idx += 1
-            if idx:
-                del self._deferred_writes[:idx]
-
-    def force_reconnect(self) -> None:
-        """Tear down and rebuild the MQTT connection from scratch."""
-        with self._wire_lock:
-            self._shutting_down = False
-            if self._reconnect_timer:
-                self._reconnect_timer.cancel()
-                self._reconnect_timer = None
-            if self._client:
-                self._client.loop_stop()
-                self._client.disconnect()
-                self._client = None
-            self._connected = False
-        self.connect()
-
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     hass.data.setdefault(DOMAIN, {})
@@ -268,7 +203,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     )
                     return new_token
 
-            mqtt_client = _ResilientMQTTClient(
+            mqtt_client = LandbookMQTTClient(
                 uid, bearer_token,
                 mqtt_host=region_cfg["mqtt_host"],
                 token_refresher=_token_refresher,
@@ -276,11 +211,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             try:
                 await hass.async_add_executor_job(mqtt_client.connect)
             except ConnectionError as exc:
-                # connect() may have left a started paho loop behind (especially
-                # if the installed landbook-api predates the timeout-cleanup fix) —
-                # tear it down so a failed setup doesn't leak a client that keeps
-                # reconnecting in the background with "Not authorized" spam.
-                await hass.async_add_executor_job(mqtt_client.disconnect)
                 raise ConfigEntryNotReady(f"MQTT connection failed: {exc}") from exc
 
             async def _proactive_token_refresh(_now: object = None) -> None:
@@ -314,7 +244,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             "Landbook: no MQTT message for account %s in %.0fs — forcing reconnect",
                             uid, MQTT_WATCHDOG_STALE_INTERVAL,
                         )
-                        await hass.async_add_executor_job(mqtt_client.force_reconnect)
+                        await hass.async_add_executor_job(mqtt_client.reconnect)
                         if accounts.get(uid):
                             accounts[uid]["last_activity"] = time.monotonic()
                 except Exception as exc:  # noqa: BLE001
@@ -420,11 +350,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     edata["device_id"], edata["pk"], edata["dk"], edata["all_codes"]
                 )
 
-    def _on_reconnect_handler() -> None:
-        mqtt_client.flush_deferred()
-        _request_all_states()
-
-    mqtt_client._on_reconnect = _on_reconnect_handler
+    mqtt_client._on_reconnect = _request_all_states
     mqtt_client.send_read(device_id, pk, dk, [p["code"] for p in properties])
 
     # Also seed initial state from REST API as a fallback
