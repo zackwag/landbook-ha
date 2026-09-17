@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/zackwag/landbook-ha/compare/v1.4.1...v1.5.0) (2026-09-17)
+
+
+### Features
+
+* **ci:** add ruff lint + format check ([#33](https://github.com/zackwag/landbook-ha/issues/33)) ([a8e0f76](https://github.com/zackwag/landbook-ha/commit/a8e0f76b3d4f847632825184bc879180c1477a5f))
+
 ## [1.4.1](https://github.com/zackwag/landbook-ha/compare/v1.4.0...v1.4.1) (2026-09-17)
 
 
