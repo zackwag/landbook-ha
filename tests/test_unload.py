@@ -1,8 +1,8 @@
 """Tests for async_unload_entry lifecycle."""
+
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 

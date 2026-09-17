@@ -12,22 +12,20 @@ Two distinct race conditions exist:
    single-use refresh token — only the first succeeds.  The asyncio.Lock
    serializes setup so siblings re-read the persisted token and skip the refresh.
 """
+
 from __future__ import annotations
 
 import threading
-from concurrent.futures import ThreadPoolExecutor
-from unittest.mock import MagicMock, patch
 
 import pytest
-
 from landbook_api import LandbookAuthError
 
 from .conftest import make_config_entry, make_hass, register_entry
 
-
 # ---------------------------------------------------------------------------
 # Runtime _token_refresher lock tests
 # ---------------------------------------------------------------------------
+
 
 class TestRuntimeRefreshLock:
     """The threading.Lock in _token_refresher must serialize concurrent calls."""
@@ -35,11 +33,13 @@ class TestRuntimeRefreshLock:
     def _build_token_refresher(self, hass, mock_api):
         """Extract _token_refresher from async_setup_entry by running setup once."""
         import asyncio
+
         from custom_components.landbook import async_setup_entry
         from custom_components.landbook.const import DOMAIN
 
-        entry = make_config_entry(hass, entry_id="rt_entry", uid="u1",
-                                  bearer_token="tok_v1", refresh_token="ref_v1")
+        entry = make_config_entry(
+            hass, entry_id="rt_entry", uid="u1", bearer_token="tok_v1", refresh_token="ref_v1"
+        )
         register_entry(hass, entry)
         hass.data.setdefault(DOMAIN, {})
 
@@ -50,10 +50,6 @@ class TestRuntimeRefreshLock:
             loop.run_until_complete(async_setup_entry(hass, entry))
         finally:
             loop.close()
-
-        accounts = hass.data[DOMAIN]["_accounts"]
-        mqtt_client = accounts["u1"]["client"]
-        token_refresher = mqtt_client.call_args_list is not None
 
         # The token_refresher is passed to LandbookMQTTClient — grab it
         call_kwargs = mock_api.mqtt_cls.call_args
@@ -89,7 +85,7 @@ class TestRuntimeRefreshLock:
         def run_refresh(idx):
             try:
                 results[idx] = refresher()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - captured for the main thread to assert on, not swallowed
                 errors[idx] = e
 
         t1 = threading.Thread(target=run_refresh, args=(0,))
@@ -142,12 +138,14 @@ class TestRuntimeRefreshLock:
         to all config entries for the account."""
         hass = make_hass()
         api = mock_landbook_api
-        from custom_components.landbook.const import DOMAIN, CONF_BEARER_TOKEN, CONF_REFRESH_TOKEN
+        from custom_components.landbook.const import DOMAIN
 
-        entry1 = make_config_entry(hass, entry_id="e1", uid="u1",
-                                   bearer_token="tok_old", refresh_token="ref_old")
-        entry2 = make_config_entry(hass, entry_id="e2", uid="u1",
-                                   bearer_token="tok_old", refresh_token="ref_old")
+        entry1 = make_config_entry(
+            hass, entry_id="e1", uid="u1", bearer_token="tok_old", refresh_token="ref_old"
+        )
+        entry2 = make_config_entry(
+            hass, entry_id="e2", uid="u1", bearer_token="tok_old", refresh_token="ref_old"
+        )
         register_entry(hass, entry1)
         register_entry(hass, entry2)
         hass.data.setdefault(DOMAIN, {})
@@ -155,6 +153,7 @@ class TestRuntimeRefreshLock:
         api.refresh_token.return_value = ("tok_fresh", "ref_fresh")
 
         import asyncio
+
         from custom_components.landbook import async_setup_entry
 
         loop = asyncio.new_event_loop()
@@ -186,14 +185,16 @@ class TestRuntimeRefreshLock:
         api = mock_landbook_api
         from custom_components.landbook.const import DOMAIN
 
-        entry = make_config_entry(hass, entry_id="seq1", uid="u1",
-                                  bearer_token="tok_v1", refresh_token="ref_v1")
+        entry = make_config_entry(
+            hass, entry_id="seq1", uid="u1", bearer_token="tok_v1", refresh_token="ref_v1"
+        )
         register_entry(hass, entry)
         hass.data.setdefault(DOMAIN, {})
 
         api.refresh_token.return_value = ("tok_v2", "ref_v2")
 
         import asyncio
+
         from custom_components.landbook import async_setup_entry
 
         loop = asyncio.new_event_loop()
@@ -211,6 +212,12 @@ class TestRuntimeRefreshLock:
         result1 = refresher()
         assert result1 == "tok_v2"
         first_call_args = api.refresh_token.call_args[0]
+        assert first_call_args[0] == "tok_v1", (
+            f"Expected access token 'tok_v1' from setup, got '{first_call_args[0]}'"
+        )
+        assert first_call_args[1] == "ref_v1", (
+            f"Expected refresh token 'ref_v1' from setup, got '{first_call_args[1]}'"
+        )
 
         # Second runtime refresh: must use tok_v2/ref_v2 from in-memory state,
         # NOT the config entry (which may still have tok_v1/ref_v1 because
@@ -234,6 +241,7 @@ class TestRuntimeRefreshLock:
 # Setup-time asyncio.Lock tests (PR #10 feature)
 # ---------------------------------------------------------------------------
 
+
 class TestSetupTimeLock:
     """The asyncio.Lock in async_setup_entry must serialize concurrent
     setup calls for the same account so only one calls async_refresh_token."""
@@ -244,19 +252,25 @@ class TestSetupTimeLock:
         expired token, only the first should call async_refresh_token. The
         second should re-read the fresh token from its entry and skip."""
         import asyncio
+
         from landbook_api import LandbookAPIError
+
         from custom_components.landbook import async_setup, async_setup_entry
         from custom_components.landbook.const import (
-            DOMAIN, CONF_BEARER_TOKEN, CONF_REFRESH_TOKEN,
+            CONF_BEARER_TOKEN,
+            CONF_REFRESH_TOKEN,
+            DOMAIN,
         )
 
         hass = make_hass()
         api = mock_landbook_api
 
-        entry1 = make_config_entry(hass, entry_id="s1", uid="u1",
-                                   bearer_token="expired_tok", refresh_token="ref_1")
-        entry2 = make_config_entry(hass, entry_id="s2", uid="u1",
-                                   bearer_token="expired_tok", refresh_token="ref_1")
+        entry1 = make_config_entry(
+            hass, entry_id="s1", uid="u1", bearer_token="expired_tok", refresh_token="ref_1"
+        )
+        entry2 = make_config_entry(
+            hass, entry_id="s2", uid="u1", bearer_token="expired_tok", refresh_token="ref_1"
+        )
         # Give entry2 a different device key so it's a separate device
         entry2.data["device_key"] = "dk2"
         register_entry(hass, entry1)
@@ -279,7 +293,11 @@ class TestSetupTimeLock:
             for eid in ["s1", "s2"]:
                 e = hass.config_entries.async_get_entry(eid)
                 if e:
-                    e.data = {**e.data, CONF_BEARER_TOKEN: "fresh_tok", CONF_REFRESH_TOKEN: "fresh_ref"}
+                    e.data = {
+                        **e.data,
+                        CONF_BEARER_TOKEN: "fresh_tok",
+                        CONF_REFRESH_TOKEN: "fresh_ref",
+                    }
             return ("fresh_tok", "fresh_ref")
 
         api.async_refresh_token.side_effect = refresh_side_effect
@@ -294,16 +312,13 @@ class TestSetupTimeLock:
                 async_setup_entry(hass, entry2),
                 return_exceptions=True,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - skip gracefully if the not-yet-merged feature isn't present
             pytest.skip("Setup-time lock not yet merged (PR #10)")
             return
 
         if isinstance(r1, Exception) or isinstance(r2, Exception):
             failures = [r for r in [r1, r2] if isinstance(r, Exception)]
-            pytest.skip(
-                "Setup-time lock not yet merged — entry failed: "
-                f"{failures[0]}"
-            )
+            pytest.skip(f"Setup-time lock not yet merged — entry failed: {failures[0]}")
 
         # With PR #10 merged: only ONE call to async_refresh_token.
         # Without the lock, both entries race and both call refresh (count=2).

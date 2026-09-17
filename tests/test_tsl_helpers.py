@@ -1,7 +1,6 @@
 """Tests for TSL property detection helpers in __init__.py."""
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from custom_components.landbook import (
     _coerce_value,
@@ -14,10 +13,10 @@ from custom_components.landbook import (
     _find_temperature_prop,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixture: realistic TSL property list from DC2313R fan
 # ---------------------------------------------------------------------------
+
 
 def _make_prop(code, name, dtype, sort=99, specs=None):
     p = {"code": code, "name": name, "dataType": dtype, "sort": sort}
@@ -26,35 +25,75 @@ def _make_prop(code, name, dtype, sort=99, specs=None):
     return p
 
 
-POWER = _make_prop("power", "Power", "BOOL", sort=0, specs=[
-    {"name": "On", "value": "true"},
-    {"name": "Off", "value": "false"},
-])
-SPEED = _make_prop("speed", "Wind Speed", "INT", sort=1, specs={"min": "1", "max": "12", "step": "1"})
-MODE = _make_prop("mode", "Working Mode", "ENUM", sort=2, specs=[
-    {"name": "Normal", "value": "0"},
-    {"name": "Natural", "value": "1"},
-    {"name": "Sleep", "value": "2"},
-    {"name": "Auto", "value": "3"},
-])
-OSCILLATION = _make_prop("oscillate", "Oscillation", "BOOL", sort=3, specs=[
-    {"name": "On", "value": "true"},
-    {"name": "Off", "value": "false"},
-])
-LIGHT = _make_prop("light", "Light", "BOOL", sort=4, specs=[
-    {"name": "On", "value": "true"},
-    {"name": "Off", "value": "false"},
-])
-SOUND = _make_prop("sound", "Sound", "BOOL", sort=5, specs=[
-    {"name": "On", "value": "true"},
-    {"name": "Off", "value": "false"},
-])
-COUNTDOWN = _make_prop("countdown", "Countdown", "ENUM", sort=6, specs=[
-    {"name": "0", "value": "0"},
-    {"name": "1", "value": "1"},
-    {"name": "2", "value": "2"},
-])
-TEMPERATURE = _make_prop("temperature", "Temperature", "INT", sort=7, specs={"min": "0", "max": "150"})
+POWER = _make_prop(
+    "power",
+    "Power",
+    "BOOL",
+    sort=0,
+    specs=[
+        {"name": "On", "value": "true"},
+        {"name": "Off", "value": "false"},
+    ],
+)
+SPEED = _make_prop(
+    "speed", "Wind Speed", "INT", sort=1, specs={"min": "1", "max": "12", "step": "1"}
+)
+MODE = _make_prop(
+    "mode",
+    "Working Mode",
+    "ENUM",
+    sort=2,
+    specs=[
+        {"name": "Normal", "value": "0"},
+        {"name": "Natural", "value": "1"},
+        {"name": "Sleep", "value": "2"},
+        {"name": "Auto", "value": "3"},
+    ],
+)
+OSCILLATION = _make_prop(
+    "oscillate",
+    "Oscillation",
+    "BOOL",
+    sort=3,
+    specs=[
+        {"name": "On", "value": "true"},
+        {"name": "Off", "value": "false"},
+    ],
+)
+LIGHT = _make_prop(
+    "light",
+    "Light",
+    "BOOL",
+    sort=4,
+    specs=[
+        {"name": "On", "value": "true"},
+        {"name": "Off", "value": "false"},
+    ],
+)
+SOUND = _make_prop(
+    "sound",
+    "Sound",
+    "BOOL",
+    sort=5,
+    specs=[
+        {"name": "On", "value": "true"},
+        {"name": "Off", "value": "false"},
+    ],
+)
+COUNTDOWN = _make_prop(
+    "countdown",
+    "Countdown",
+    "ENUM",
+    sort=6,
+    specs=[
+        {"name": "0", "value": "0"},
+        {"name": "1", "value": "1"},
+        {"name": "2", "value": "2"},
+    ],
+)
+TEMPERATURE = _make_prop(
+    "temperature", "Temperature", "INT", sort=7, specs={"min": "0", "max": "150"}
+)
 
 ALL_PROPS = [POWER, SPEED, MODE, OSCILLATION, LIGHT, SOUND, COUNTDOWN, TEMPERATURE]
 
@@ -62,6 +101,7 @@ ALL_PROPS = [POWER, SPEED, MODE, OSCILLATION, LIGHT, SOUND, COUNTDOWN, TEMPERATU
 # ---------------------------------------------------------------------------
 # _find_power_prop
 # ---------------------------------------------------------------------------
+
 
 class TestFindPowerProp:
     def test_finds_by_sort_and_specs(self):
@@ -81,6 +121,7 @@ class TestFindPowerProp:
 # ---------------------------------------------------------------------------
 # _find_speed_prop
 # ---------------------------------------------------------------------------
+
 
 class TestFindSpeedProp:
     def test_finds_speed_by_name_hint(self):
@@ -104,6 +145,7 @@ class TestFindSpeedProp:
 # _find_mode_prop
 # ---------------------------------------------------------------------------
 
+
 class TestFindModeProp:
     def test_finds_mode_by_name(self):
         assert _find_mode_prop(ALL_PROPS, POWER, SPEED) is MODE
@@ -124,6 +166,7 @@ class TestFindModeProp:
 # _find_oscillation_prop
 # ---------------------------------------------------------------------------
 
+
 class TestFindOscillationProp:
     def test_finds_oscillation(self):
         assert _find_oscillation_prop(ALL_PROPS, POWER, SPEED, MODE) is OSCILLATION
@@ -139,6 +182,7 @@ class TestFindOscillationProp:
 # ---------------------------------------------------------------------------
 # _find_light_props
 # ---------------------------------------------------------------------------
+
 
 class TestFindLightProps:
     def test_finds_light_prop(self):
@@ -164,6 +208,7 @@ class TestFindLightProps:
 # _find_temperature_prop
 # ---------------------------------------------------------------------------
 
+
 class TestFindTemperatureProp:
     def test_finds_real_temperature(self):
         claimed = {id(p) for p in [POWER, SPEED, MODE, OSCILLATION, LIGHT, SOUND, COUNTDOWN]}
@@ -185,6 +230,7 @@ class TestFindTemperatureProp:
 # _find_countdown_prop
 # ---------------------------------------------------------------------------
 
+
 class TestFindCountdownProp:
     def test_finds_countdown(self):
         claimed = {id(p) for p in [POWER, SPEED, MODE, OSCILLATION, LIGHT, SOUND]}
@@ -205,6 +251,7 @@ class TestFindCountdownProp:
 # ---------------------------------------------------------------------------
 # _coerce_value
 # ---------------------------------------------------------------------------
+
 
 class TestCoerceValue:
     def test_none_passthrough(self):

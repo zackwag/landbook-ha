@@ -1,4 +1,5 @@
 """Config flow for Landbook integration."""
+
 from __future__ import annotations
 
 import logging
@@ -7,8 +8,13 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
-
-from landbook_api import DEFAULT_REGION, REGIONS, LandbookAuthError, async_get_device_list, async_login
+from landbook_api import (
+    DEFAULT_REGION,
+    REGIONS,
+    LandbookAuthError,
+    async_get_device_list,
+    async_login,
+)
 
 from .const import (
     CONF_BEARER_TOKEN,
@@ -37,9 +43,7 @@ REGION_OPTIONS = {key: cfg["label"] for key, cfg in REGIONS.items()}
 class LandbookOptionsFlow(config_entries.OptionsFlow):
     """Allow changing options after setup."""
 
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
@@ -59,7 +63,9 @@ class LandbookOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_TEMP_UNIT, default=current_unit): vol.In([TEMP_UNIT_F, TEMP_UNIT_C]),
+                    vol.Required(CONF_TEMP_UNIT, default=current_unit): vol.In(
+                        [TEMP_UNIT_F, TEMP_UNIT_C]
+                    ),
                     vol.Required(CONF_SIGNAL_STRENGTH, default=current_signal): bool,
                     vol.Required(CONF_MQTT_WATCHDOG_ENABLED, default=current_watchdog): bool,
                 }
@@ -84,9 +90,7 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._region: str = DEFAULT_REGION
         self._devices: list[dict] = []
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Step 1: choose region, collect email + password, attempt login."""
         errors: dict[str, str] = {}
 
@@ -99,8 +103,8 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except LandbookAuthError as exc:
                 _LOGGER.error("Landbook login error: %s", exc)
                 errors["base"] = "invalid_auth"
-            except Exception as exc:  # noqa: BLE001
-                _LOGGER.exception("Unexpected login error: %s", exc)
+            except Exception:
+                _LOGGER.exception("Unexpected login error")
                 errors["base"] = "cannot_connect"
             else:
                 self._email = email
@@ -122,9 +126,7 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_reauth(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_reauth(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Re-authenticate when the stored token is no longer valid."""
         return await self.async_step_reauth_confirm()
 
@@ -173,17 +175,15 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_pick_device(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_pick_device(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Step 2: pick which device to add."""
         errors: dict[str, str] = {}
 
         if not self._devices:
             try:
                 self._devices = await async_get_device_list(self._bearer_token, self._region)
-            except Exception as exc:  # noqa: BLE001
-                _LOGGER.exception("Failed to fetch device list: %s", exc)
+            except Exception:
+                _LOGGER.exception("Failed to fetch device list")
                 errors["base"] = "cannot_connect"
 
         if user_input is not None and not errors:

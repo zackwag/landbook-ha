@@ -1,4 +1,5 @@
 """Number entities for INT-typed Landbook properties."""
+
 from __future__ import annotations
 
 import logging

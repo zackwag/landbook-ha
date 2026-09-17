@@ -1,4 +1,5 @@
 """Sensor entities for Landbook devices."""
+
 from __future__ import annotations
 
 import logging
@@ -15,8 +16,14 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
-    CONF_DEVICE_NAME, CONF_FW_VERSION, CONF_PRODUCT_NAME, CONF_SIGNAL_STRENGTH,
-    CONF_TEMP_UNIT, DOMAIN, TEMP_UNIT_C, TEMP_UNIT_F,
+    CONF_DEVICE_NAME,
+    CONF_FW_VERSION,
+    CONF_PRODUCT_NAME,
+    CONF_SIGNAL_STRENGTH,
+    CONF_TEMP_UNIT,
+    DOMAIN,
+    TEMP_UNIT_C,
+    TEMP_UNIT_F,
 )
 
 _LOGGER = logging.getLogger(__name__)

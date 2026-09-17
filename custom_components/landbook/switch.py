@@ -1,4 +1,5 @@
 """Switch entities for BOOL-typed Landbook extra properties."""
+
 from __future__ import annotations
 
 import logging
@@ -10,7 +11,15 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_DEVICE_NAME, CONF_FW_VERSION, CONF_PRODUCT_NAME, DISPLAY_LIGHT_HINTS, DISPLAY_NAME_OVERRIDES, SWITCH_ICON_MAP, DOMAIN
+from .const import (
+    CONF_DEVICE_NAME,
+    CONF_FW_VERSION,
+    CONF_PRODUCT_NAME,
+    DISPLAY_LIGHT_HINTS,
+    DISPLAY_NAME_OVERRIDES,
+    DOMAIN,
+    SWITCH_ICON_MAP,
+)
 
 _LOGGER = logging.getLogger(__name__)
 

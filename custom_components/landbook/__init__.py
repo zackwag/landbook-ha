@@ -1,20 +1,19 @@
 """Landbook integration."""
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import threading
 import time
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
-
 from homeassistant.helpers.event import async_track_time_interval
-from datetime import timedelta
-
 from landbook_api import (
     DEFAULT_REGION,
     REGIONS,
@@ -41,12 +40,12 @@ from .const import (
     DOMAIN,
     MQTT_WATCHDOG_CHECK_INTERVAL,
     MQTT_WATCHDOG_STALE_INTERVAL,
-    PROACTIVE_TOKEN_REFRESH_INTERVAL,
-    SIGNAL_STRENGTH_POLL_INTERVAL,
-    TEMPERATURE_NAME_HINTS,
     OSCILLATION_NAME_HINTS,
     POWER_SORT_ORDER,
+    PROACTIVE_TOKEN_REFRESH_INTERVAL,
+    SIGNAL_STRENGTH_POLL_INTERVAL,
     SPEED_NAME_HINTS,
+    TEMPERATURE_NAME_HINTS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -122,13 +121,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     "Token expired and no refresh token on file (pre-upgrade entry) — reauth required"
                 )
             try:
-                bearer_token, refresh_tok = await async_refresh_token(bearer_token, refresh_tok, region)
+                bearer_token, refresh_tok = await async_refresh_token(
+                    bearer_token, refresh_tok, region
+                )
                 account_tokens[uid] = {"access": bearer_token, "refresh": refresh_tok}
                 for cfg_entry in hass.config_entries.async_entries(DOMAIN):
                     if cfg_entry.data.get(CONF_UID) == uid:
                         hass.config_entries.async_update_entry(
                             cfg_entry,
-                            data={**cfg_entry.data, CONF_BEARER_TOKEN: bearer_token, CONF_REFRESH_TOKEN: refresh_tok},
+                            data={
+                                **cfg_entry.data,
+                                CONF_BEARER_TOKEN: bearer_token,
+                                CONF_REFRESH_TOKEN: refresh_tok,
+                            },
                         )
                 properties = await async_get_tsl(bearer_token, pk, region)
             except LandbookAuthError as auth_exc:
@@ -136,14 +141,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     domain_data[reauth_fired_key] = True
                     if "rejected" in str(auth_exc).lower():
                         entry.async_start_reauth(hass)
-                raise ConfigEntryNotReady(f"Token expired and refresh failed: {auth_exc}") from auth_exc
+                raise ConfigEntryNotReady(
+                    f"Token expired and refresh failed: {auth_exc}"
+                ) from auth_exc
             except LandbookAPIError as retry_exc:
-                raise ConfigEntryNotReady(f"Could not fetch TSL model after token refresh: {retry_exc}") from retry_exc
+                raise ConfigEntryNotReady(
+                    f"Could not fetch TSL model after token refresh: {retry_exc}"
+                ) from retry_exc
 
-    power_prop        = _find_power_prop(properties)
-    speed_prop        = _find_speed_prop(properties, power_prop)
-    mode_prop         = _find_mode_prop(properties, power_prop, speed_prop)
-    oscillation_prop  = _find_oscillation_prop(properties, power_prop, speed_prop, mode_prop)
+    power_prop = _find_power_prop(properties)
+    speed_prop = _find_speed_prop(properties, power_prop)
+    mode_prop = _find_mode_prop(properties, power_prop, speed_prop)
+    oscillation_prop = _find_oscillation_prop(properties, power_prop, speed_prop, mode_prop)
 
     claimed = {id(p) for p in [power_prop, speed_prop, mode_prop, oscillation_prop] if p}
     light_props = _find_light_props(properties, claimed)
@@ -175,8 +184,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     current_refresh = _latest_tokens["refresh"]
                     try:
                         if not current_refresh:
-                            raise LandbookAuthError("No refresh token on file (pre-upgrade entry) — reauth required")
-                        new_token, new_refresh = refresh_token(current_token, current_refresh, region)
+                            raise LandbookAuthError(
+                                "No refresh token on file (pre-upgrade entry) — reauth required"
+                            )
+                        new_token, new_refresh = refresh_token(
+                            current_token, current_refresh, region
+                        )
                     except LandbookAuthError as exc:
                         _LOGGER.warning("Token rejected for %s, triggering reauth: %s", uid, exc)
                         if accounts.get(uid, {}).get("client"):
@@ -190,7 +203,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                 )
                         raise
                     except Exception as exc:
-                        _LOGGER.warning("Token refresh failed for %s (network?), will retry: %s", uid, exc)
+                        _LOGGER.warning(
+                            "Token refresh failed for %s (network?), will retry: %s", uid, exc
+                        )
                         raise
                     _latest_tokens["access"] = new_token
                     _latest_tokens["refresh"] = new_refresh
@@ -204,7 +219,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     return new_token
 
             mqtt_client = LandbookMQTTClient(
-                uid, bearer_token,
+                uid,
+                bearer_token,
                 mqtt_host=region_cfg["mqtt_host"],
                 token_refresher=_token_refresher,
             )
@@ -242,7 +258,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     if time.monotonic() - last > MQTT_WATCHDOG_STALE_INTERVAL:
                         _LOGGER.warning(
                             "Landbook: no MQTT message for account %s in %.0fs — forcing reconnect",
-                            uid, MQTT_WATCHDOG_STALE_INTERVAL,
+                            uid,
+                            MQTT_WATCHDOG_STALE_INTERVAL,
                         )
                         await hass.async_add_executor_job(mqtt_client.reconnect)
                         if accounts.get(uid):
@@ -322,15 +339,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             status = (
                 payload.get("data", {}).get("value")
                 if isinstance(payload.get("data"), dict)
-                else payload.get("status")
-                or payload.get("online")
-                or payload.get("connectStatus")
+                else payload.get("status") or payload.get("online") or payload.get("connectStatus")
             )
             if status is not None:
                 online = bool(status)
                 if entry_data["online"] != online:
                     entry_data["online"] = online
-                    _LOGGER.info("Landbook device %s went %s", dk, "online" if online else "offline")
+                    _LOGGER.info(
+                        "Landbook device %s went %s", dk, "online" if online else "offline"
+                    )
                     hass.loop.call_soon_threadsafe(
                         hass.async_create_task,
                         _async_update_entities(hass, entry.entry_id, None),
@@ -433,7 +450,7 @@ def _setup_signal_polling(
                 if entry_data is not None:
                     entry_data["signal_strength"] = int(rssi)
                     await _async_update_entities(hass, entry.entry_id, {"signal_strength"})
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - optional background poll, must not crash the entry
             _LOGGER.debug("Signal strength poll failed for %s: %s", dk, exc)
 
     # Poll immediately then on interval
@@ -469,7 +486,9 @@ async def _async_trigger_reauth(hass: HomeAssistant, entry: ConfigEntry) -> None
     entry.async_start_reauth(hass)
 
 
-async def _async_persist_token_for_account(hass: HomeAssistant, uid: str, token: str, refresh_tok: str) -> None:
+async def _async_persist_token_for_account(
+    hass: HomeAssistant, uid: str, token: str, refresh_tok: str
+) -> None:
     """Persist a refreshed access/refresh token pair to all config entries for this account."""
     accounts = hass.data.get(DOMAIN, {}).get("_accounts", {})
     for eid in list(accounts.get(uid, {}).get("entries", set())):
@@ -512,7 +531,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                 )
                     except Exception as exc:  # noqa: BLE001
                         _LOGGER.warning(
-                            "Landbook: could not persist latest token for %s on unload: %s", uid, exc
+                            "Landbook: could not persist latest token for %s on unload: %s",
+                            uid,
+                            exc,
                         )
 
                 client: LandbookMQTTClient = acct["client"]
@@ -532,13 +553,18 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 
-async def _async_update_entities(hass: HomeAssistant, entry_id: str, changed_keys: set[str] | None = None) -> None:
-    hass.bus.async_fire(f"{DOMAIN}_state_update_{entry_id}", {"changed_keys": changed_keys or set()})
+async def _async_update_entities(
+    hass: HomeAssistant, entry_id: str, changed_keys: set[str] | None = None
+) -> None:
+    hass.bus.async_fire(
+        f"{DOMAIN}_state_update_{entry_id}", {"changed_keys": changed_keys or set()}
+    )
 
 
 # ---------------------------------------------------------------------------
 # TSL helpers
 # ---------------------------------------------------------------------------
+
 
 def _find_power_prop(properties: list[dict]) -> dict | None:
     for p in properties:
@@ -555,9 +581,7 @@ def _find_power_prop(properties: list[dict]) -> dict | None:
     return next((p for p in properties if p["dataType"] == "BOOL"), None)
 
 
-def _find_speed_prop(
-    properties: list[dict], power_prop: dict | None
-) -> dict | None:
+def _find_speed_prop(properties: list[dict], power_prop: dict | None) -> dict | None:
     """Find the INT speed property (used for percentage control)."""
     for p in properties:
         if p is power_prop:
@@ -565,8 +589,7 @@ def _find_speed_prop(
         name_lower = p.get("name", "").lower()
         code_lower = p.get("code", "").lower()
         if p["dataType"] == "INT" and any(
-            hint in name_lower or hint in code_lower
-            for hint in SPEED_NAME_HINTS
+            hint in name_lower or hint in code_lower for hint in SPEED_NAME_HINTS
         ):
             return p
     return None
@@ -582,8 +605,7 @@ def _find_mode_prop(
         name_lower = p.get("name", "").lower()
         code_lower = p.get("code", "").lower()
         if p["dataType"] == "ENUM" and any(
-            hint in name_lower or hint in code_lower
-            for hint in ("mode", "working")
+            hint in name_lower or hint in code_lower for hint in ("mode", "working")
         ):
             return p
     return None
@@ -601,19 +623,17 @@ def _find_oscillation_prop(
         name_lower = p.get("name", "").lower()
         code_lower = p.get("code", "").lower()
         if p["dataType"] == "BOOL" and any(
-            hint in name_lower or hint in code_lower
-            for hint in OSCILLATION_NAME_HINTS
+            hint in name_lower or hint in code_lower for hint in OSCILLATION_NAME_HINTS
         ):
             return p
     return None
 
 
-def _find_light_props(
-    properties: list[dict], claimed_ids: set
-) -> list[dict]:
+def _find_light_props(properties: list[dict], claimed_ids: set) -> list[dict]:
     """Find BOOL properties that should be light entities (display/backlight)."""
     return [
-        p for p in properties
+        p
+        for p in properties
         if id(p) not in claimed_ids
         and p["dataType"] == "BOOL"
         and any(
@@ -623,28 +643,21 @@ def _find_light_props(
     ]
 
 
-def _find_temperature_prop(
-    properties: list[dict], claimed_ids: set
-) -> dict | None:
+def _find_temperature_prop(properties: list[dict], claimed_ids: set) -> dict | None:
     """Find a temperature property from the TSL or return a virtual one for bus_ reports."""
     for p in properties:
         if id(p) in claimed_ids:
             continue
         name_lower = p.get("name", "").lower()
         code_lower = p.get("code", "").lower()
-        if any(
-            hint in name_lower or hint in code_lower
-            for hint in TEMPERATURE_NAME_HINTS
-        ):
+        if any(hint in name_lower or hint in code_lower for hint in TEMPERATURE_NAME_HINTS):
             return p
     # Temperature may not be in the writable TSL but still arrive in bus_ reports
     # Return a synthetic prop so the sensor entity knows to watch for it
     return {"code": "temperature", "name": "Temperature", "dataType": "INT", "synthetic": True}
 
 
-def _find_countdown_prop(
-    properties: list[dict], claimed_ids: set
-) -> dict | None:
+def _find_countdown_prop(properties: list[dict], claimed_ids: set) -> dict | None:
     """Find a countdown/timer ENUM property."""
     for p in properties:
         if id(p) in claimed_ids:
@@ -652,8 +665,7 @@ def _find_countdown_prop(
         name_lower = p.get("name", "").lower()
         code_lower = p.get("code", "").lower()
         if p["dataType"] == "ENUM" and any(
-            hint in name_lower or hint in code_lower
-            for hint in ("countdown", "timer", "timing")
+            hint in name_lower or hint in code_lower for hint in ("countdown", "timer", "timing")
         ):
             return p
     return None
