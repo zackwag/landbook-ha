@@ -22,7 +22,7 @@ TEMP_UNIT_C = "°C"
 CONF_SIGNAL_STRENGTH = "signal_strength_enabled"
 SIGNAL_STRENGTH_POLL_INTERVAL = 300  # seconds
 CONF_MQTT_WATCHDOG_ENABLED = "mqtt_watchdog_enabled"
-MQTT_WATCHDOG_CHECK_INTERVAL = 30   # seconds between dead-link checks
+MQTT_WATCHDOG_CHECK_INTERVAL = 30  # seconds between dead-link checks
 MQTT_WATCHDOG_STALE_INTERVAL = 300  # zero-inbound-MQTT time before forcing reconnect
 
 # Access tokens are issued with a 2-hour TTL (JWT exp - iat). Refresh well
@@ -36,13 +36,13 @@ DTYPE_ENUM = "ENUM"
 DTYPE_INT = "INT"
 
 # MQTT topic suffixes (device_id = f"qd{pk}{dk}")
-MQTT_TOPIC_COMMAND = "sys_"   # publish: commands to device
-MQTT_TOPIC_REPORTS = "bus_"   # subscribe: state reports (MATTR)
-MQTT_TOPIC_ACK     = "ack_"   # subscribe: command acknowledgements
-MQTT_TOPIC_ONLINE  = "onl_"   # subscribe: online/offline events
-MQTT_TOPIC_OTA     = "ota_"   # subscribe: OTA updates
-MQTT_TOPIC_INFO    = "inf_"   # subscribe: device info push
-MQTT_TOPIC_LOCATION= "loc_"   # subscribe: location push
+MQTT_TOPIC_COMMAND = "sys_"  # publish: commands to device
+MQTT_TOPIC_REPORTS = "bus_"  # subscribe: state reports (MATTR)
+MQTT_TOPIC_ACK = "ack_"  # subscribe: command acknowledgements
+MQTT_TOPIC_ONLINE = "onl_"  # subscribe: online/offline events
+MQTT_TOPIC_OTA = "ota_"  # subscribe: OTA updates
+MQTT_TOPIC_INFO = "inf_"  # subscribe: device info push
+MQTT_TOPIC_LOCATION = "loc_"  # subscribe: location push
 # Will be auto-detected if sort=0 and is BOOL with on/open/enable spec
 POWER_SORT_ORDER = 0
 

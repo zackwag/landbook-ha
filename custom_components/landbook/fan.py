@@ -1,4 +1,5 @@
 """Fan entity for Landbook integration."""
+
 from __future__ import annotations
 
 import logging
@@ -35,8 +36,8 @@ class LandbookFan(FanEntity):
         self._entry = entry
         self._data = data
         self._power_prop = data["power_prop"]
-        self._speed_prop = data["speed_prop"]       # INT → percentage
-        self._mode_prop = data.get("mode_prop")     # ENUM → preset modes
+        self._speed_prop = data["speed_prop"]  # INT → percentage
+        self._mode_prop = data.get("mode_prop")  # ENUM → preset modes
         self._oscillation_prop = data.get("oscillation_prop")
 
         device_name: str = entry.data[CONF_DEVICE_NAME]
@@ -57,7 +58,7 @@ class LandbookFan(FanEntity):
         self._preset_modes: list[str] = []
         self._mode_values: list[int] = []
         if self._mode_prop:
-            for spec in (self._mode_prop.get("specs") or []):
+            for spec in self._mode_prop.get("specs") or []:
                 self._preset_modes.append(spec["name"])
                 self._mode_values.append(int(spec["value"]))
 

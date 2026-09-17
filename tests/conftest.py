@@ -1,4 +1,5 @@
 """Shared fixtures for Landbook integration tests."""
+
 from __future__ import annotations
 
 import asyncio
@@ -13,9 +14,13 @@ def mock_landbook_api():
     """Patch landbook_api callables and return them as a namespace for easy access."""
     with (
         patch("custom_components.landbook.async_get_tsl", new_callable=AsyncMock) as mock_tsl,
-        patch("custom_components.landbook.async_refresh_token", new_callable=AsyncMock) as mock_async_refresh,
+        patch(
+            "custom_components.landbook.async_refresh_token", new_callable=AsyncMock
+        ) as mock_async_refresh,
         patch("custom_components.landbook.refresh_token") as mock_sync_refresh,
-        patch("custom_components.landbook.async_get_device_attributes", new_callable=AsyncMock) as mock_attrs,
+        patch(
+            "custom_components.landbook.async_get_device_attributes", new_callable=AsyncMock
+        ) as mock_attrs,
         patch("custom_components.landbook.LandbookMQTTClient") as mock_mqtt_cls,
     ):
         mock_mqtt = MagicMock()
@@ -26,10 +31,20 @@ def mock_landbook_api():
         mock_mqtt_cls.return_value = mock_mqtt
 
         mock_tsl.return_value = [
-            {"code": "power", "name": "Power", "dataType": "BOOL", "sort": 0,
-             "specs": [{"name": "On", "value": "true"}, {"name": "Off", "value": "false"}]},
-            {"code": "speed", "name": "Speed", "dataType": "INT", "sort": 1,
-             "specs": {"min": "1", "max": "12", "step": "1"}},
+            {
+                "code": "power",
+                "name": "Power",
+                "dataType": "BOOL",
+                "sort": 0,
+                "specs": [{"name": "On", "value": "true"}, {"name": "Off", "value": "false"}],
+            },
+            {
+                "code": "speed",
+                "name": "Speed",
+                "dataType": "INT",
+                "sort": 1,
+                "specs": {"min": "1", "max": "12", "step": "1"},
+            },
         ]
         mock_attrs.return_value = {"customizeTslInfo": [], "deviceData": {}}
 

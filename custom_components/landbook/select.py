@@ -1,4 +1,5 @@
 """Select entities for ENUM-typed Landbook extra properties."""
+
 from __future__ import annotations
 
 import logging
@@ -9,7 +10,13 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_DEVICE_NAME, CONF_FW_VERSION, CONF_PRODUCT_NAME, DISPLAY_NAME_OVERRIDES, DOMAIN
+from .const import (
+    CONF_DEVICE_NAME,
+    CONF_FW_VERSION,
+    CONF_PRODUCT_NAME,
+    DISPLAY_NAME_OVERRIDES,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,8 +67,7 @@ class LandbookCountdown(SelectEntity):
         self._code: str = prop["code"]
 
         self._options_map: dict[str, int] = {
-            _countdown_label(int(s["value"])): int(s["value"])
-            for s in (prop.get("specs") or [])
+            _countdown_label(int(s["value"])): int(s["value"]) for s in (prop.get("specs") or [])
         }
 
         self._attr_options = list(self._options_map.keys())
@@ -151,8 +157,7 @@ class LandbookSelect(SelectEntity):
         self._code: str = prop["code"]
 
         self._options_map: dict[str, int] = {
-            s["name"]: int(s["value"])
-            for s in (prop.get("specs") or [])
+            s["name"]: int(s["value"]) for s in (prop.get("specs") or [])
         }
 
         self._attr_options = list(self._options_map.keys())

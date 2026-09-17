@@ -1,4 +1,5 @@
 """Tests for config flow and options flow."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
@@ -9,21 +10,16 @@ from custom_components.landbook.config_flow import LandbookFanConfigFlow, Landbo
 from custom_components.landbook.const import (
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
-    CONF_DEVICE_NAME,
     CONF_EMAIL,
     CONF_PASSWORD,
     CONF_PRODUCT_KEY,
-    CONF_PRODUCT_NAME,
     CONF_REFRESH_TOKEN,
     CONF_REGION,
     CONF_SIGNAL_STRENGTH,
     CONF_TEMP_UNIT,
     CONF_UID,
-    DOMAIN,
     TEMP_UNIT_C,
-    TEMP_UNIT_F,
 )
-
 
 MOCK_DEVICES = [
     {
@@ -255,8 +251,11 @@ class TestOptionsFlow:
     def _make_flow(self, entry):
         flow = LandbookOptionsFlow()
         with patch.object(
-            type(flow), "config_entry",
-            new_callable=PropertyMock, return_value=entry, create=True,
+            type(flow),
+            "config_entry",
+            new_callable=PropertyMock,
+            return_value=entry,
+            create=True,
         ):
             yield flow
 

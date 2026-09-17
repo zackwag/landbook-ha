@@ -1,15 +1,16 @@
 """Tests for diagnostics output and credential redaction."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
 import pytest
 
+from custom_components.landbook.const import DOMAIN
 from custom_components.landbook.diagnostics import (
     REDACT,
     async_get_config_entry_diagnostics,
 )
-from custom_components.landbook.const import DOMAIN
 
 
 @pytest.fixture()

@@ -1,8 +1,9 @@
 """Light entities for display-type BOOL Landbook properties."""
+
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 from homeassistant.components.light import ColorMode, LightEntity
 from homeassistant.config_entries import ConfigEntry
@@ -10,7 +11,13 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_DEVICE_NAME, CONF_FW_VERSION, CONF_PRODUCT_NAME, DISPLAY_NAME_OVERRIDES, DOMAIN
+from .const import (
+    CONF_DEVICE_NAME,
+    CONF_FW_VERSION,
+    CONF_PRODUCT_NAME,
+    DISPLAY_NAME_OVERRIDES,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,10 +28,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
-    entities = [
-        LandbookLight(hass, entry, data, prop)
-        for prop in data.get("light_props", [])
-    ]
+    entities = [LandbookLight(hass, entry, data, prop) for prop in data.get("light_props", [])]
     if entities:
         async_add_entities(entities, update_before_add=False)
 
@@ -34,7 +38,7 @@ class LandbookLight(LightEntity):
 
     _attr_should_poll = False
     _attr_color_mode = ColorMode.ONOFF
-    _attr_supported_color_modes = {ColorMode.ONOFF}
+    _attr_supported_color_modes: ClassVar = {ColorMode.ONOFF}
 
     def __init__(
         self,

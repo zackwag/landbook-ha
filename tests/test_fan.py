@@ -1,19 +1,17 @@
 """Tests for the LandbookFan entity."""
+
 from __future__ import annotations
 
-import math
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from homeassistant.components.fan import FanEntityFeature
 
 from custom_components.landbook.fan import LandbookFan, _suggest_area
 
-
 # ---------------------------------------------------------------------------
 # _suggest_area (pure function)
 # ---------------------------------------------------------------------------
+
 
 class TestSuggestArea:
     def test_strips_product_trailing_words(self):
@@ -39,6 +37,7 @@ class TestSuggestArea:
 # Fan entity helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_fan(
     speed_count=12,
     preset_modes=None,
@@ -53,17 +52,26 @@ def _make_fan(
         "fw_version": "1.0",
     }
 
-    power_prop = {"code": power_code, "dataType": "BOOL", "sort": 0,
-                  "specs": [{"name": "On", "value": "true"}]}
-    speed_prop = {"code": "speed", "dataType": "INT",
-                  "specs": {"min": "1", "max": str(speed_count), "step": "1"}}
+    power_prop = {
+        "code": power_code,
+        "dataType": "BOOL",
+        "sort": 0,
+        "specs": [{"name": "On", "value": "true"}],
+    }
+    speed_prop = {
+        "code": "speed",
+        "dataType": "INT",
+        "specs": {"min": "1", "max": str(speed_count), "step": "1"},
+    }
     mode_prop = None
     oscillation_prop = None
 
     if preset_modes:
-        mode_prop = {"code": "mode", "dataType": "ENUM", "specs": [
-            {"name": name, "value": str(i)} for i, name in enumerate(preset_modes)
-        ]}
+        mode_prop = {
+            "code": "mode",
+            "dataType": "ENUM",
+            "specs": [{"name": name, "value": str(i)} for i, name in enumerate(preset_modes)],
+        }
 
     if has_oscillation:
         oscillation_prop = {"code": "oscillate", "dataType": "BOOL"}
@@ -91,6 +99,7 @@ def _make_fan(
 # ---------------------------------------------------------------------------
 # Supported features
 # ---------------------------------------------------------------------------
+
 
 def _ensure_turn_on_off():
     """Add TURN_ON/TURN_OFF to FanEntityFeature if the HA version predates them."""
@@ -123,6 +132,7 @@ class TestSupportedFeatures:
 # ---------------------------------------------------------------------------
 # Speed percentage math
 # ---------------------------------------------------------------------------
+
 
 class TestSpeedPercentage:
     def test_speed_1_of_12(self):
@@ -159,6 +169,7 @@ class TestSpeedPercentage:
 # _is_auto_mode
 # ---------------------------------------------------------------------------
 
+
 class TestIsAutoMode:
     def test_auto_detected(self):
         fan, _ = _make_fan(preset_modes=["Normal", "Natural", "Sleep", "Auto"])
@@ -183,6 +194,7 @@ class TestIsAutoMode:
 # ---------------------------------------------------------------------------
 # State update handler
 # ---------------------------------------------------------------------------
+
 
 class TestHandleStateUpdate:
     def test_power_on_from_mqtt(self):
@@ -248,6 +260,7 @@ class TestHandleStateUpdate:
 # ---------------------------------------------------------------------------
 # Availability
 # ---------------------------------------------------------------------------
+
 
 class TestAvailability:
     def test_available_when_online(self):

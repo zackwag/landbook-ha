@@ -2,6 +2,7 @@
 
 Covers light, switch, number, sensor, and select entities.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -9,10 +10,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.landbook.light import LandbookLight
-from custom_components.landbook.switch import LandbookSwitch
 from custom_components.landbook.number import LandbookNumber
-from custom_components.landbook.sensor import LandbookTemperatureSensor
 from custom_components.landbook.select import LandbookCountdown, LandbookSelect, _countdown_label
+from custom_components.landbook.sensor import LandbookTemperatureSensor
+from custom_components.landbook.switch import LandbookSwitch
 
 
 def _patch_entity(entity):
@@ -25,6 +26,7 @@ def _patch_entity(entity):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_entry(**overrides):
     entry = MagicMock()
@@ -61,38 +63,90 @@ def _event(changed_keys):
 # Availability (shared pattern: offline=unavailable, power off=unavailable)
 # ---------------------------------------------------------------------------
 
+
 class TestAvailabilityGating:
     """Light, switch, number, select, countdown all gate on online + power."""
 
-    @pytest.mark.parametrize("cls,prop", [
-        (LandbookLight, {"code": "light", "name": "Light", "dataType": "BOOL"}),
-        (LandbookSwitch, {"code": "sound", "name": "Sound", "dataType": "BOOL",
-                          "specs": [{"name": "On", "value": "true"}, {"name": "Off", "value": "false"}]}),
-        (LandbookNumber, {"code": "brightness", "name": "Brightness", "dataType": "INT",
-                          "specs": {"min": "0", "max": "100", "step": "1"}}),
-    ])
+    @pytest.mark.parametrize(
+        "cls,prop",
+        [
+            (LandbookLight, {"code": "light", "name": "Light", "dataType": "BOOL"}),
+            (
+                LandbookSwitch,
+                {
+                    "code": "sound",
+                    "name": "Sound",
+                    "dataType": "BOOL",
+                    "specs": [{"name": "On", "value": "true"}, {"name": "Off", "value": "false"}],
+                },
+            ),
+            (
+                LandbookNumber,
+                {
+                    "code": "brightness",
+                    "name": "Brightness",
+                    "dataType": "INT",
+                    "specs": {"min": "0", "max": "100", "step": "1"},
+                },
+            ),
+        ],
+    )
     def test_available_when_online_and_power_on(self, cls, prop):
         entity = cls(MagicMock(), _make_entry(), _make_data(power_on=True), prop)
         assert entity.available is True
 
-    @pytest.mark.parametrize("cls,prop", [
-        (LandbookLight, {"code": "light", "name": "Light", "dataType": "BOOL"}),
-        (LandbookSwitch, {"code": "sound", "name": "Sound", "dataType": "BOOL",
-                          "specs": [{"name": "On", "value": "true"}, {"name": "Off", "value": "false"}]}),
-        (LandbookNumber, {"code": "brightness", "name": "Brightness", "dataType": "INT",
-                          "specs": {"min": "0", "max": "100", "step": "1"}}),
-    ])
+    @pytest.mark.parametrize(
+        "cls,prop",
+        [
+            (LandbookLight, {"code": "light", "name": "Light", "dataType": "BOOL"}),
+            (
+                LandbookSwitch,
+                {
+                    "code": "sound",
+                    "name": "Sound",
+                    "dataType": "BOOL",
+                    "specs": [{"name": "On", "value": "true"}, {"name": "Off", "value": "false"}],
+                },
+            ),
+            (
+                LandbookNumber,
+                {
+                    "code": "brightness",
+                    "name": "Brightness",
+                    "dataType": "INT",
+                    "specs": {"min": "0", "max": "100", "step": "1"},
+                },
+            ),
+        ],
+    )
     def test_unavailable_when_offline(self, cls, prop):
         entity = cls(MagicMock(), _make_entry(), _make_data(online=False), prop)
         assert entity.available is False
 
-    @pytest.mark.parametrize("cls,prop", [
-        (LandbookLight, {"code": "light", "name": "Light", "dataType": "BOOL"}),
-        (LandbookSwitch, {"code": "sound", "name": "Sound", "dataType": "BOOL",
-                          "specs": [{"name": "On", "value": "true"}, {"name": "Off", "value": "false"}]}),
-        (LandbookNumber, {"code": "brightness", "name": "Brightness", "dataType": "INT",
-                          "specs": {"min": "0", "max": "100", "step": "1"}}),
-    ])
+    @pytest.mark.parametrize(
+        "cls,prop",
+        [
+            (LandbookLight, {"code": "light", "name": "Light", "dataType": "BOOL"}),
+            (
+                LandbookSwitch,
+                {
+                    "code": "sound",
+                    "name": "Sound",
+                    "dataType": "BOOL",
+                    "specs": [{"name": "On", "value": "true"}, {"name": "Off", "value": "false"}],
+                },
+            ),
+            (
+                LandbookNumber,
+                {
+                    "code": "brightness",
+                    "name": "Brightness",
+                    "dataType": "INT",
+                    "specs": {"min": "0", "max": "100", "step": "1"},
+                },
+            ),
+        ],
+    )
     def test_unavailable_when_power_off(self, cls, prop):
         entity = cls(MagicMock(), _make_entry(), _make_data(power_on=False), prop)
         assert entity.available is False
@@ -101,6 +155,7 @@ class TestAvailabilityGating:
 # ---------------------------------------------------------------------------
 # Temperature sensor
 # ---------------------------------------------------------------------------
+
 
 class TestTemperatureSensor:
     def _make_sensor(self, use_celsius=False):
@@ -156,6 +211,7 @@ class TestTemperatureSensor:
 # _countdown_label (pure function)
 # ---------------------------------------------------------------------------
 
+
 class TestCountdownLabel:
     def test_zero_is_cancel(self):
         assert _countdown_label(0) == "Cancel"
@@ -171,17 +227,22 @@ class TestCountdownLabel:
 # Countdown select entity
 # ---------------------------------------------------------------------------
 
+
 class TestCountdownEntity:
     def _make_countdown(self, power_on=True):
         entry = _make_entry()
         data = _make_data(power_on=power_on)
-        prop = {"code": "countdown", "name": "Countdown", "dataType": "ENUM",
-                "specs": [
-                    {"name": "0", "value": "0"},
-                    {"name": "1", "value": "1"},
-                    {"name": "2", "value": "2"},
-                    {"name": "4", "value": "4"},
-                ]}
+        prop = {
+            "code": "countdown",
+            "name": "Countdown",
+            "dataType": "ENUM",
+            "specs": [
+                {"name": "0", "value": "0"},
+                {"name": "1", "value": "1"},
+                {"name": "2", "value": "2"},
+                {"name": "4", "value": "4"},
+            ],
+        }
         cd = LandbookCountdown(MagicMock(), entry, data, prop)
         _patch_entity(cd)
         return cd, data
@@ -216,16 +277,21 @@ class TestCountdownEntity:
 # Generic select entity
 # ---------------------------------------------------------------------------
 
+
 class TestGenericSelect:
     def _make_select(self, power_on=True):
         entry = _make_entry()
         data = _make_data(power_on=power_on)
-        prop = {"code": "custom_mode", "name": "Custom", "dataType": "ENUM",
-                "specs": [
-                    {"name": "Low", "value": "0"},
-                    {"name": "Medium", "value": "1"},
-                    {"name": "High", "value": "2"},
-                ]}
+        prop = {
+            "code": "custom_mode",
+            "name": "Custom",
+            "dataType": "ENUM",
+            "specs": [
+                {"name": "Low", "value": "0"},
+                {"name": "Medium", "value": "1"},
+                {"name": "High", "value": "2"},
+            ],
+        }
         sel = LandbookSelect(MagicMock(), entry, data, prop)
         _patch_entity(sel)
         return sel, data
@@ -243,7 +309,7 @@ class TestGenericSelect:
         assert sel._attr_current_option == "High"
 
     def test_ignores_irrelevant_key(self):
-        sel, data = self._make_select()
+        sel, _data = self._make_select()
         sel._attr_current_option = "Low"
         sel._handle_state_update(_event(["unrelated"]))
         assert sel._attr_current_option == "Low"
@@ -252,6 +318,7 @@ class TestGenericSelect:
 # ---------------------------------------------------------------------------
 # Light state updates
 # ---------------------------------------------------------------------------
+
 
 class TestLightEntity:
     def _make_light(self):
@@ -280,12 +347,17 @@ class TestLightEntity:
 # Switch state updates
 # ---------------------------------------------------------------------------
 
+
 class TestSwitchEntity:
     def _make_switch(self):
         entry = _make_entry()
         data = _make_data()
-        prop = {"code": "sound", "name": "Sound", "dataType": "BOOL",
-                "specs": [{"name": "On", "value": "true"}, {"name": "Off", "value": "false"}]}
+        prop = {
+            "code": "sound",
+            "name": "Sound",
+            "dataType": "BOOL",
+            "specs": [{"name": "On", "value": "true"}, {"name": "Off", "value": "false"}],
+        }
         sw = LandbookSwitch(MagicMock(), entry, data, prop)
         _patch_entity(sw)
         return sw, data
@@ -308,12 +380,17 @@ class TestSwitchEntity:
 # Number state updates
 # ---------------------------------------------------------------------------
 
+
 class TestNumberEntity:
     def _make_number(self):
         entry = _make_entry()
         data = _make_data()
-        prop = {"code": "brightness", "name": "Brightness", "dataType": "INT",
-                "specs": {"min": "0", "max": "100", "step": "1"}}
+        prop = {
+            "code": "brightness",
+            "name": "Brightness",
+            "dataType": "INT",
+            "specs": {"min": "0", "max": "100", "step": "1"},
+        }
         num = LandbookNumber(MagicMock(), entry, data, prop)
         _patch_entity(num)
         return num, data
