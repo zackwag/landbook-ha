@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.0](https://github.com/zackwag/landbook-ha/compare/v1.4.1...v1.5.0) (2026-09-18)
+
+
+### Features
+
+* **ci:** add ruff lint + format check ([#33](https://github.com/zackwag/landbook-ha/issues/33)) ([a8e0f76](https://github.com/zackwag/landbook-ha/commit/a8e0f76b3d4f847632825184bc879180c1477a5f))
+
+
+### Bug Fixes
+
+* **deps:** require landbook-api&gt;=0.4.2 for reconnect ghost-session fix ([#35](https://github.com/zackwag/landbook-ha/issues/35)) ([13fc78d](https://github.com/zackwag/landbook-ha/commit/13fc78d7c06526f6db4fe9c9afd18a4792975440))
+
 ## [1.4.1](https://github.com/zackwag/landbook-ha/compare/v1.4.0...v1.4.1) (2026-09-17)
 
 
