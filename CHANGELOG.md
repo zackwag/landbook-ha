@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/zackwag/landbook-ha/compare/v2.0.1...v2.0.2) (2026-09-19)
+
+
+### Bug Fixes
+
+* seed state correctly at startup, map p11vkW's local temperature id ([#49](https://github.com/zackwag/landbook-ha/issues/49)) ([3ffff70](https://github.com/zackwag/landbook-ha/commit/3ffff708fc588b96a2f13237daa9b9dcc0647892))
+
 ## [2.0.1](https://github.com/zackwag/landbook-ha/compare/v2.0.0...v2.0.1) (2026-09-19)
 
 
