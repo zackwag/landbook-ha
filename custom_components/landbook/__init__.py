@@ -471,15 +471,15 @@ async def _connect_local_client(
 ) -> LandbookLocalClient | None:
     """Best-effort attempt to establish local-LAN control for one device.
 
-    Local control is opt-in and must never block or break entry setup — any
-    failure here (missing authKey, discovery timeout, connect/login
-    failure) just logs a warning and returns None, leaving the caller to
-    fall back to the always-available cloud MQTT path.
+    Always attempted, no opt-in toggle — but must never block or break entry
+    setup, so any failure here (missing authKey, discovery timeout,
+    connect/login failure) just logs a warning and returns None, leaving the
+    caller to fall back to the always-available cloud MQTT path.
     """
     auth_key = entry.data.get(CONF_AUTH_KEY)
     if not auth_key:
         _LOGGER.warning(
-            "Landbook: local control enabled for %s but no authKey on file "
+            "Landbook: no authKey on file for %s "
             "(remove and re-add the device to pick one up) — using cloud MQTT",
             dk,
         )
@@ -504,8 +504,7 @@ async def _connect_local_client(
 
     if match is None:
         _LOGGER.warning(
-            "Landbook: local control enabled for %s but not found via LAN discovery "
-            "— using cloud MQTT",
+            "Landbook: %s not found via LAN discovery — using cloud MQTT",
             dk,
         )
         return None
