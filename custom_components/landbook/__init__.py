@@ -405,12 +405,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     mqtt_client.subscribe_device(device_id, _mqtt_callback)
 
-    # On (re)connect, request state for ALL devices on this account
+    # On (re)connect, request state for ALL devices on this account, except
+    # ones a live local-LAN connection is already keeping fresh — asking
+    # cloud to re-read those is both pointless (local reads are authoritative
+    # for them, see _mqtt_callback's bus_ branch) and, on real hardware,
+    # reliably fails its SENDACK once the device has gone mostly quiet on
+    # cloud in favor of local.
     def _request_all_states() -> None:
         for eid, edata in hass.data.get(DOMAIN, {}).items():
             if eid.startswith("_") or not isinstance(edata, dict):
                 continue
-            if edata.get("uid") == uid:
+            if edata.get("uid") == uid and edata.get("local_client") is None:
                 mqtt_client.send_read(
                     edata["device_id"], edata["pk"], edata["dk"], edata["all_codes"]
                 )
