@@ -79,12 +79,7 @@ class LandbookNumber(NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         self._attr_native_value = value
-        self._data["mqtt_client"].send_write(
-            self._data["device_id"],
-            self._data["pk"],
-            self._data["dk"],
-            {self._code: int(value)},
-        )
+        self._data["send_command"]({self._code: int(value)})
         self.async_write_ha_state()
 
     async def async_added_to_hass(self) -> None:

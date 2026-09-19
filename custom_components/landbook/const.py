@@ -15,6 +15,10 @@ CONF_DEVICE_KEY = "device_key"
 CONF_PRODUCT_KEY = "product_key"
 CONF_DEVICE_NAME = "device_name"
 CONF_PRODUCT_NAME = "product_name"
+# Required for local-LAN control login (see landbook_api.local_client). Only
+# present on entries created after that support landed — older entries fall
+# back to cloud MQTT if local control is enabled without one on file.
+CONF_AUTH_KEY = "auth_key"
 CONF_FW_VERSION = "fw_version"
 CONF_TEMP_UNIT = "temperature_unit"
 TEMP_UNIT_F = "°F"
@@ -28,6 +32,11 @@ CONF_MQTT_WATCHDOG_ENABLED = "mqtt_watchdog_enabled"
 # every fan on the account, and a newly-added fan inherits whatever the
 # account is already set to instead of defaulting back to off.
 CONF_LOCAL_CONTROL_ENABLED = "local_control_enabled"
+# How long to wait for local-LAN discovery replies before giving up and
+# falling back to cloud MQTT for accounts that opted in to local control.
+# Runs once per account (cached), not per device.
+LOCAL_DISCOVERY_TIMEOUT = 5.0  # seconds
+LOCAL_CONNECT_TIMEOUT = 10.0  # seconds, matches LandbookLocalClient's default
 MQTT_WATCHDOG_CHECK_INTERVAL = 30  # seconds between dead-link checks
 MQTT_WATCHDOG_STALE_INTERVAL = 300  # zero-inbound-MQTT time before forcing reconnect
 

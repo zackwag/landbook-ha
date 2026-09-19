@@ -17,6 +17,7 @@ from landbook_api import (
 )
 
 from .const import (
+    CONF_AUTH_KEY,
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
     CONF_DEVICE_NAME,
@@ -240,6 +241,9 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_PRODUCT_KEY: device["productKey"],
                         CONF_DEVICE_NAME: device["deviceName"],
                         CONF_PRODUCT_NAME: device.get("productName", ""),
+                        # Required for local-LAN control login — not used at
+                        # all unless CONF_LOCAL_CONTROL_ENABLED is also on.
+                        CONF_AUTH_KEY: device.get("authKey", ""),
                         # Account-wide setting — a newly-added fan should
                         # start in whatever state the rest of the account is
                         # already in, not silently default back to off.

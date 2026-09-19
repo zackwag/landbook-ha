@@ -8,6 +8,7 @@ import pytest
 
 from custom_components.landbook.config_flow import LandbookFanConfigFlow, LandbookOptionsFlow
 from custom_components.landbook.const import (
+    CONF_AUTH_KEY,
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
     CONF_EMAIL,
@@ -28,12 +29,15 @@ MOCK_DEVICES = [
         "productKey": "pk1",
         "deviceName": "Living Room Fan",
         "productName": "OmniBreeze",
+        "authKey": "dGVzdGtleQ==",
     },
     {
         "deviceKey": "dk2",
         "productKey": "pk2",
         "deviceName": "Bedroom Fan",
         "productName": "OmniBreeze",
+        # Deliberately no authKey — real accounts shouldn't hit this, but
+        # the flow must not crash if the device list ever omits it.
     },
 ]
 
@@ -144,8 +148,28 @@ class TestPickDeviceStep:
         assert result["data"][CONF_PRODUCT_KEY] == "pk1"
         assert result["data"][CONF_BEARER_TOKEN] == "tok"
         assert result["data"][CONF_REFRESH_TOKEN] == "ref"
+        assert result["data"][CONF_AUTH_KEY] == "dGVzdGtleQ=="
         # No siblings on the account yet -> defaults to off.
         assert result["data"][CONF_LOCAL_CONTROL_ENABLED] is False
+
+    @pytest.mark.asyncio
+    async def test_pick_device_missing_auth_key_defaults_empty(self):
+        flow = LandbookFanConfigFlow()
+        flow.hass = MagicMock()
+        flow.hass.config_entries.async_entries = MagicMock(return_value=[])
+        flow._email = "a@b.com"
+        flow._bearer_token = "tok"
+        flow._refresh_token = "ref"
+        flow._uid = "uid1"
+        flow._region = "us"
+        flow._devices = MOCK_DEVICES
+
+        flow.async_set_unique_id = AsyncMock()
+        flow._abort_if_unique_id_configured = MagicMock()
+
+        result = await flow.async_step_pick_device({"device": "Bedroom Fan"})
+
+        assert result["data"][CONF_AUTH_KEY] == ""
 
     @pytest.mark.asyncio
     async def test_pick_device_inherits_account_local_control_setting(self):

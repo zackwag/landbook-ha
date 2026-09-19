@@ -84,6 +84,7 @@ def _make_fan(
         "state": {},
         "online": True,
         "mqtt_client": MagicMock(),
+        "send_command": MagicMock(),
         "device_id": "qdpk1dk1",
         "pk": "pk1",
         "dk": "dk1",
@@ -272,3 +273,47 @@ class TestAvailability:
         fan, data = _make_fan()
         data["online"] = False
         assert fan.available is False
+
+
+# ---------------------------------------------------------------------------
+# Commands — the write path goes through self._data["send_command"](props)
+# (see __init__._make_send_command), not a direct mqtt_client.send_write()
+# call, so local control can intercept it.
+# ---------------------------------------------------------------------------
+
+
+class TestCommands:
+    async def test_turn_on_sends_power(self):
+        fan, data = _make_fan()
+        await fan.async_turn_on()
+        data["send_command"].assert_called_once_with({"power": True})
+
+    async def test_turn_on_with_percentage_sends_power_and_speed(self):
+        fan, data = _make_fan(speed_count=4)
+        await fan.async_turn_on(percentage=50)
+        data["send_command"].assert_called_once_with({"power": True, "speed": 2})
+
+    async def test_turn_on_with_preset_mode_sends_power_and_mode(self):
+        fan, data = _make_fan(preset_modes=["Normal", "Sleep"])
+        await fan.async_turn_on(preset_mode="Sleep")
+        data["send_command"].assert_called_once_with({"power": True, "mode": 1})
+
+    async def test_turn_off_sends_power_false(self):
+        fan, data = _make_fan()
+        await fan.async_turn_off()
+        data["send_command"].assert_called_once_with({"power": False})
+
+    async def test_set_percentage_sends_speed(self):
+        fan, data = _make_fan(speed_count=4)
+        await fan.async_set_percentage(75)
+        data["send_command"].assert_called_once_with({"speed": 3})
+
+    async def test_set_preset_mode_sends_mode(self):
+        fan, data = _make_fan(preset_modes=["Normal", "Sleep"])
+        await fan.async_set_preset_mode("Sleep")
+        data["send_command"].assert_called_once_with({"mode": 1})
+
+    async def test_oscillate_sends_oscillation_state(self):
+        fan, data = _make_fan(has_oscillation=True)
+        await fan.async_oscillate(True)
+        data["send_command"].assert_called_once_with({"oscillate": True})

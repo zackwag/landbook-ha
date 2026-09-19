@@ -22,6 +22,8 @@ def mock_landbook_api():
             "custom_components.landbook.async_get_device_attributes", new_callable=AsyncMock
         ) as mock_attrs,
         patch("custom_components.landbook.LandbookMQTTClient") as mock_mqtt_cls,
+        patch("custom_components.landbook.discover_devices") as mock_discover,
+        patch("custom_components.landbook.LandbookLocalClient") as mock_local_cls,
     ):
         mock_mqtt = MagicMock()
         mock_mqtt.connect = MagicMock()
@@ -29,6 +31,17 @@ def mock_landbook_api():
         mock_mqtt.subscribe_device = MagicMock()
         mock_mqtt.send_read = MagicMock()
         mock_mqtt_cls.return_value = mock_mqtt
+
+        # Default: no devices found via LAN discovery, so local control
+        # (only even attempted by an entry that opts in) safely falls back
+        # to cloud MQTT unless a test explicitly arranges otherwise.
+        mock_discover.return_value = []
+
+        mock_local = MagicMock()
+        mock_local.connect = MagicMock()
+        mock_local.disconnect = MagicMock()
+        mock_local.write = MagicMock()
+        mock_local_cls.return_value = mock_local
 
         mock_tsl.return_value = [
             {
@@ -55,6 +68,9 @@ def mock_landbook_api():
             async_get_device_attributes=mock_attrs,
             mqtt_cls=mock_mqtt_cls,
             mqtt=mock_mqtt,
+            discover_devices=mock_discover,
+            local_client_cls=mock_local_cls,
+            local_client=mock_local,
         )
 
 
