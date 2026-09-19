@@ -11,6 +11,7 @@ from custom_components.landbook.const import (
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
     CONF_EMAIL,
+    CONF_LOCAL_CONTROL_ENABLED,
     CONF_PASSWORD,
     CONF_PRODUCT_KEY,
     CONF_REFRESH_TOKEN,
@@ -124,6 +125,7 @@ class TestPickDeviceStep:
     async def test_pick_device_creates_entry(self):
         flow = LandbookFanConfigFlow()
         flow.hass = MagicMock()
+        flow.hass.config_entries.async_entries = MagicMock(return_value=[])
         flow._email = "a@b.com"
         flow._bearer_token = "tok"
         flow._refresh_token = "ref"
@@ -142,6 +144,54 @@ class TestPickDeviceStep:
         assert result["data"][CONF_PRODUCT_KEY] == "pk1"
         assert result["data"][CONF_BEARER_TOKEN] == "tok"
         assert result["data"][CONF_REFRESH_TOKEN] == "ref"
+        # No siblings on the account yet -> defaults to off.
+        assert result["data"][CONF_LOCAL_CONTROL_ENABLED] is False
+
+    @pytest.mark.asyncio
+    async def test_pick_device_inherits_account_local_control_setting(self):
+        sibling = MagicMock()
+        sibling.data = {CONF_UID: "uid1"}
+        sibling.options = {CONF_LOCAL_CONTROL_ENABLED: True}
+
+        flow = LandbookFanConfigFlow()
+        flow.hass = MagicMock()
+        flow.hass.config_entries.async_entries = MagicMock(return_value=[sibling])
+        flow._email = "a@b.com"
+        flow._bearer_token = "tok"
+        flow._refresh_token = "ref"
+        flow._uid = "uid1"
+        flow._region = "us"
+        flow._devices = MOCK_DEVICES
+
+        flow.async_set_unique_id = AsyncMock()
+        flow._abort_if_unique_id_configured = MagicMock()
+
+        result = await flow.async_step_pick_device({"device": "Bedroom Fan"})
+
+        assert result["data"][CONF_LOCAL_CONTROL_ENABLED] is True
+
+    @pytest.mark.asyncio
+    async def test_pick_device_ignores_other_accounts_local_control_setting(self):
+        other_account = MagicMock()
+        other_account.data = {CONF_UID: "some_other_uid"}
+        other_account.options = {CONF_LOCAL_CONTROL_ENABLED: True}
+
+        flow = LandbookFanConfigFlow()
+        flow.hass = MagicMock()
+        flow.hass.config_entries.async_entries = MagicMock(return_value=[other_account])
+        flow._email = "a@b.com"
+        flow._bearer_token = "tok"
+        flow._refresh_token = "ref"
+        flow._uid = "uid1"
+        flow._region = "us"
+        flow._devices = MOCK_DEVICES
+
+        flow.async_set_unique_id = AsyncMock()
+        flow._abort_if_unique_id_configured = MagicMock()
+
+        result = await flow.async_step_pick_device({"device": "Living Room Fan"})
+
+        assert result["data"][CONF_LOCAL_CONTROL_ENABLED] is False
 
     @pytest.mark.asyncio
     async def test_pick_device_not_found_shows_error(self):
@@ -248,8 +298,12 @@ class TestReauthFlow:
 
 
 class TestOptionsFlow:
-    def _make_flow(self, entry):
+    def _make_flow(self, entry, hass=None):
         flow = LandbookOptionsFlow()
+        if hass is None:
+            hass = MagicMock()
+            hass.config_entries.async_entries = MagicMock(return_value=[])
+        flow.hass = hass
         with patch.object(
             type(flow),
             "config_entry",
@@ -272,16 +326,93 @@ class TestOptionsFlow:
         assert result["step_id"] == "init"
 
     @pytest.mark.asyncio
-    async def test_options_submit_creates_entry(self):
+    async def test_options_form_includes_local_control_field(self):
         entry = MagicMock()
         entry.options = {}
         entry.data = {}
 
         for flow in self._make_flow(entry):
+            result = await flow.async_step_init(None)
+
+        schema_keys = {str(k) for k in result["data_schema"].schema}
+        assert CONF_LOCAL_CONTROL_ENABLED in schema_keys
+
+    @pytest.mark.asyncio
+    async def test_options_submit_creates_entry(self):
+        entry = MagicMock()
+        entry.entry_id = "e1"
+        entry.options = {}
+        entry.data = {}
+
+        for flow in self._make_flow(entry):
             result = await flow.async_step_init(
-                {CONF_TEMP_UNIT: TEMP_UNIT_C, CONF_SIGNAL_STRENGTH: True}
+                {
+                    CONF_TEMP_UNIT: TEMP_UNIT_C,
+                    CONF_SIGNAL_STRENGTH: True,
+                    CONF_LOCAL_CONTROL_ENABLED: False,
+                }
             )
 
         assert result["type"] == "create_entry"
         assert result["data"][CONF_TEMP_UNIT] == TEMP_UNIT_C
         assert result["data"][CONF_SIGNAL_STRENGTH] is True
+
+    @pytest.mark.asyncio
+    async def test_enabling_local_control_propagates_to_sibling_entries(self):
+        entry = MagicMock()
+        entry.entry_id = "e1"
+        entry.options = {}
+        entry.data = {CONF_UID: "uid1"}
+
+        sibling = MagicMock()
+        sibling.entry_id = "e2"
+        sibling.options = {}
+        sibling.data = {CONF_UID: "uid1"}
+
+        other_account = MagicMock()
+        other_account.entry_id = "e3"
+        other_account.options = {}
+        other_account.data = {CONF_UID: "some_other_uid"}
+
+        hass = MagicMock()
+        hass.config_entries.async_entries = MagicMock(return_value=[entry, sibling, other_account])
+
+        for flow in self._make_flow(entry, hass=hass):
+            await flow.async_step_init(
+                {
+                    CONF_TEMP_UNIT: TEMP_UNIT_C,
+                    CONF_SIGNAL_STRENGTH: False,
+                    CONF_LOCAL_CONTROL_ENABLED: True,
+                }
+            )
+
+        hass.config_entries.async_update_entry.assert_called_once()
+        call_args = hass.config_entries.async_update_entry.call_args
+        assert call_args[0][0] is sibling
+        assert call_args[1]["options"][CONF_LOCAL_CONTROL_ENABLED] is True
+
+    @pytest.mark.asyncio
+    async def test_unchanged_local_control_does_not_trigger_sibling_reload(self):
+        entry = MagicMock()
+        entry.entry_id = "e1"
+        entry.options = {CONF_LOCAL_CONTROL_ENABLED: True}
+        entry.data = {CONF_UID: "uid1"}
+
+        sibling = MagicMock()
+        sibling.entry_id = "e2"
+        sibling.options = {CONF_LOCAL_CONTROL_ENABLED: True}  # already in sync
+        sibling.data = {CONF_UID: "uid1"}
+
+        hass = MagicMock()
+        hass.config_entries.async_entries = MagicMock(return_value=[entry, sibling])
+
+        for flow in self._make_flow(entry, hass=hass):
+            await flow.async_step_init(
+                {
+                    CONF_TEMP_UNIT: TEMP_UNIT_C,
+                    CONF_SIGNAL_STRENGTH: False,
+                    CONF_LOCAL_CONTROL_ENABLED: True,
+                }
+            )
+
+        hass.config_entries.async_update_entry.assert_not_called()
