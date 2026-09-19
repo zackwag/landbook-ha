@@ -33,8 +33,8 @@ def mock_landbook_api():
         mock_mqtt_cls.return_value = mock_mqtt
 
         # Default: no devices found via LAN discovery, so local control
-        # (only even attempted by an entry that opts in) safely falls back
-        # to cloud MQTT unless a test explicitly arranges otherwise.
+        # (always attempted, no opt-in) safely falls back to cloud MQTT
+        # unless a test explicitly arranges otherwise.
         mock_discover.return_value = []
 
         mock_local = MagicMock()

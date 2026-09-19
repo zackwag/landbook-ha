@@ -26,12 +26,6 @@ TEMP_UNIT_C = "°C"
 CONF_SIGNAL_STRENGTH = "signal_strength_enabled"
 SIGNAL_STRENGTH_POLL_INTERVAL = 300  # seconds
 CONF_MQTT_WATCHDOG_ENABLED = "mqtt_watchdog_enabled"
-# Account-wide, not per-device: kept in sync across every config entry that
-# shares the same CONF_UID whenever it's changed on any one of them (see
-# LandbookOptionsFlow.async_step_init) — so enabling it once applies to
-# every fan on the account, and a newly-added fan inherits whatever the
-# account is already set to instead of defaulting back to off.
-CONF_LOCAL_CONTROL_ENABLED = "local_control_enabled"
 # How long to wait for local-LAN discovery replies before giving up and
 # falling back to cloud MQTT for accounts that opted in to local control.
 # Runs once per account (cached), not per device.

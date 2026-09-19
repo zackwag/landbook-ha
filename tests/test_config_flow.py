@@ -12,7 +12,6 @@ from custom_components.landbook.const import (
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
     CONF_EMAIL,
-    CONF_LOCAL_CONTROL_ENABLED,
     CONF_PASSWORD,
     CONF_PRODUCT_KEY,
     CONF_REFRESH_TOKEN,
@@ -124,15 +123,6 @@ class TestUserStep:
 # ---------------------------------------------------------------------------
 
 
-def _schema_default(schema, key_name):
-    """Extract a voluptuous field's default value by name — every Required/
-    Optional marker has a `.default` attribute, but it's only callable when
-    an actual default was given (otherwise it's voluptuous's UNDEFINED
-    sentinel), so this only calls it for the one key we're looking for."""
-    key = next(k for k in schema.schema if str(k) == key_name)
-    return key.default()
-
-
 class TestPickDeviceStep:
     def _make_flow(self, hass_entries=(), **overrides):
         flow = LandbookFanConfigFlow()
@@ -152,9 +142,7 @@ class TestPickDeviceStep:
     async def test_pick_device_creates_entry(self):
         flow = self._make_flow()
 
-        result = await flow.async_step_pick_device(
-            {"device": "Living Room Fan", CONF_LOCAL_CONTROL_ENABLED: False}
-        )
+        result = await flow.async_step_pick_device({"device": "Living Room Fan"})
 
         assert result["type"] == "create_entry"
         assert result["title"] == "Living Room Fan"
@@ -163,82 +151,20 @@ class TestPickDeviceStep:
         assert result["data"][CONF_BEARER_TOKEN] == "tok"
         assert result["data"][CONF_REFRESH_TOKEN] == "ref"
         assert result["data"][CONF_AUTH_KEY] == "dGVzdGtleQ=="
-        assert result["data"][CONF_LOCAL_CONTROL_ENABLED] is False
 
     @pytest.mark.asyncio
     async def test_pick_device_missing_auth_key_defaults_empty(self):
         flow = self._make_flow()
 
-        result = await flow.async_step_pick_device(
-            {"device": "Bedroom Fan", CONF_LOCAL_CONTROL_ENABLED: False}
-        )
+        result = await flow.async_step_pick_device({"device": "Bedroom Fan"})
 
         assert result["data"][CONF_AUTH_KEY] == ""
-
-    @pytest.mark.asyncio
-    async def test_auth_key_stored_even_when_local_control_declined(self):
-        """The exact regression this guards against: turning local control
-        off during setup must never skip storing the authKey needed to turn
-        it on later without removing and re-adding the device."""
-        flow = self._make_flow()
-
-        result = await flow.async_step_pick_device(
-            {"device": "Living Room Fan", CONF_LOCAL_CONTROL_ENABLED: False}
-        )
-
-        assert result["data"][CONF_LOCAL_CONTROL_ENABLED] is False
-        assert result["data"][CONF_AUTH_KEY] == "dGVzdGtleQ=="
-
-    @pytest.mark.asyncio
-    async def test_user_can_enable_local_control_during_setup(self):
-        """No sibling entries (so the account default would be off), but
-        the user explicitly checks the box on this device's own setup."""
-        flow = self._make_flow(hass_entries=[])
-
-        result = await flow.async_step_pick_device(
-            {"device": "Living Room Fan", CONF_LOCAL_CONTROL_ENABLED: True}
-        )
-
-        assert result["data"][CONF_LOCAL_CONTROL_ENABLED] is True
-
-    @pytest.mark.asyncio
-    async def test_form_default_inherits_account_setting(self):
-        sibling = MagicMock()
-        sibling.data = {CONF_UID: "uid1"}
-        sibling.options = {CONF_LOCAL_CONTROL_ENABLED: True}
-        flow = self._make_flow(hass_entries=[sibling])
-
-        result = await flow.async_step_pick_device(None)
-
-        assert result["type"] == "form"
-        assert _schema_default(result["data_schema"], CONF_LOCAL_CONTROL_ENABLED) is True
-
-    @pytest.mark.asyncio
-    async def test_form_default_off_with_no_siblings(self):
-        flow = self._make_flow(hass_entries=[])
-
-        result = await flow.async_step_pick_device(None)
-
-        assert _schema_default(result["data_schema"], CONF_LOCAL_CONTROL_ENABLED) is False
-
-    @pytest.mark.asyncio
-    async def test_form_default_ignores_other_accounts(self):
-        other_account = MagicMock()
-        other_account.data = {CONF_UID: "some_other_uid"}
-        other_account.options = {CONF_LOCAL_CONTROL_ENABLED: True}
-        flow = self._make_flow(hass_entries=[other_account])
-
-        result = await flow.async_step_pick_device(None)
-
-        assert _schema_default(result["data_schema"], CONF_LOCAL_CONTROL_ENABLED) is False
 
     @pytest.mark.asyncio
     async def test_pick_device_not_found_shows_error(self):
         flow = self._make_flow(hass_entries=[])
 
-        result = await flow.async_step_pick_device(
-            {"device": "Nonexistent Fan", CONF_LOCAL_CONTROL_ENABLED: False}
-        )
+        result = await flow.async_step_pick_device({"device": "Nonexistent Fan"})
 
         assert result["type"] == "form"
         assert result["errors"]["base"] == "device_not_found"
@@ -361,18 +287,6 @@ class TestOptionsFlow:
         assert result["step_id"] == "init"
 
     @pytest.mark.asyncio
-    async def test_options_form_includes_local_control_field(self):
-        entry = MagicMock()
-        entry.options = {}
-        entry.data = {}
-
-        for flow in self._make_flow(entry):
-            result = await flow.async_step_init(None)
-
-        schema_keys = {str(k) for k in result["data_schema"].schema}
-        assert CONF_LOCAL_CONTROL_ENABLED in schema_keys
-
-    @pytest.mark.asyncio
     async def test_options_submit_creates_entry(self):
         entry = MagicMock()
         entry.entry_id = "e1"
@@ -384,70 +298,9 @@ class TestOptionsFlow:
                 {
                     CONF_TEMP_UNIT: TEMP_UNIT_C,
                     CONF_SIGNAL_STRENGTH: True,
-                    CONF_LOCAL_CONTROL_ENABLED: False,
                 }
             )
 
         assert result["type"] == "create_entry"
         assert result["data"][CONF_TEMP_UNIT] == TEMP_UNIT_C
         assert result["data"][CONF_SIGNAL_STRENGTH] is True
-
-    @pytest.mark.asyncio
-    async def test_enabling_local_control_propagates_to_sibling_entries(self):
-        entry = MagicMock()
-        entry.entry_id = "e1"
-        entry.options = {}
-        entry.data = {CONF_UID: "uid1"}
-
-        sibling = MagicMock()
-        sibling.entry_id = "e2"
-        sibling.options = {}
-        sibling.data = {CONF_UID: "uid1"}
-
-        other_account = MagicMock()
-        other_account.entry_id = "e3"
-        other_account.options = {}
-        other_account.data = {CONF_UID: "some_other_uid"}
-
-        hass = MagicMock()
-        hass.config_entries.async_entries = MagicMock(return_value=[entry, sibling, other_account])
-
-        for flow in self._make_flow(entry, hass=hass):
-            await flow.async_step_init(
-                {
-                    CONF_TEMP_UNIT: TEMP_UNIT_C,
-                    CONF_SIGNAL_STRENGTH: False,
-                    CONF_LOCAL_CONTROL_ENABLED: True,
-                }
-            )
-
-        hass.config_entries.async_update_entry.assert_called_once()
-        call_args = hass.config_entries.async_update_entry.call_args
-        assert call_args[0][0] is sibling
-        assert call_args[1]["options"][CONF_LOCAL_CONTROL_ENABLED] is True
-
-    @pytest.mark.asyncio
-    async def test_unchanged_local_control_does_not_trigger_sibling_reload(self):
-        entry = MagicMock()
-        entry.entry_id = "e1"
-        entry.options = {CONF_LOCAL_CONTROL_ENABLED: True}
-        entry.data = {CONF_UID: "uid1"}
-
-        sibling = MagicMock()
-        sibling.entry_id = "e2"
-        sibling.options = {CONF_LOCAL_CONTROL_ENABLED: True}  # already in sync
-        sibling.data = {CONF_UID: "uid1"}
-
-        hass = MagicMock()
-        hass.config_entries.async_entries = MagicMock(return_value=[entry, sibling])
-
-        for flow in self._make_flow(entry, hass=hass):
-            await flow.async_step_init(
-                {
-                    CONF_TEMP_UNIT: TEMP_UNIT_C,
-                    CONF_SIGNAL_STRENGTH: False,
-                    CONF_LOCAL_CONTROL_ENABLED: True,
-                }
-            )
-
-        hass.config_entries.async_update_entry.assert_not_called()
