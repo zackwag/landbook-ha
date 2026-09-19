@@ -403,9 +403,10 @@ class TestSetupEntryLocalControl:
 
 class TestMqttCallbackLocalFirst:
     """bus_ (cloud state report) handling inside _mqtt_callback, wired up
-    through async_setup_entry, must defer entirely to local control once
-    it's connected rather than blending both sources (see __init__.py's
-    _mqtt_callback bus_ branch for the rationale)."""
+    through async_setup_entry, must defer to local control for codes it
+    covers, but keep updating from cloud for codes it doesn't (e.g. a
+    synthetic property like temperature that isn't in the TSL model at
+    all — see __init__.py's _mqtt_callback bus_ branch for the rationale)."""
 
     async def _setup_with_local(self, mock_landbook_api):
         from custom_components.landbook import async_setup, async_setup_entry
@@ -417,6 +418,11 @@ class TestMqttCallbackLocalFirst:
                 product_key="pk1", device_key="dk1", ip="10.0.0.5", port=6607, version=1
             )
         ]
+        # Needs an "id" so "power" ends up in entry_data["local_codes"] —
+        # the default fixture TSL has no "id" field on any property.
+        api.async_get_tsl.return_value = [
+            {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL", "sort": 0, "specs": []},
+        ]
 
         entry = make_config_entry(hass, entry_id="e1", uid="u1")
         entry.data[CONF_AUTH_KEY] = "dGVzdGtleQ=="
@@ -427,11 +433,12 @@ class TestMqttCallbackLocalFirst:
 
         entry_data = hass.data[DOMAIN]["e1"]
         assert entry_data["local_client"] is api.local_client  # sanity check
+        assert entry_data["local_codes"] == {"power"}  # sanity check
         mqtt_callback = api.mqtt.subscribe_device.call_args[0][1]
         return hass, entry_data, mqtt_callback
 
     @pytest.mark.asyncio
-    async def test_cloud_bus_ignored_when_local_client_connected(self, mock_landbook_api):
+    async def test_cloud_bus_ignored_for_codes_local_control_covers(self, mock_landbook_api):
         hass, entry_data, mqtt_callback = await self._setup_with_local(mock_landbook_api)
         hass.loop.call_soon_threadsafe.reset_mock()
 
@@ -439,6 +446,23 @@ class TestMqttCallbackLocalFirst:
 
         assert "power" not in entry_data["state"]
         hass.loop.call_soon_threadsafe.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_cloud_bus_still_processed_for_codes_local_control_does_not_cover(
+        self, mock_landbook_api
+    ):
+        """Regression test: temperature (and anything else absent from the
+        TSL model, see _find_temperature_prop) has no local TTLV id, so it
+        can only ever arrive via cloud — it must keep updating even while
+        local control is connected and authoritative for other codes."""
+        hass, entry_data, mqtt_callback = await self._setup_with_local(mock_landbook_api)
+        hass.loop.call_soon_threadsafe.reset_mock()
+
+        mqtt_callback("bus_", {"data": {"kv": {"power": True, "temperature": "77"}}})
+
+        assert "power" not in entry_data["state"]
+        assert entry_data["state"]["temperature"] == "77"
+        hass.loop.call_soon_threadsafe.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_cloud_bus_processed_when_no_local_client(self, mock_landbook_api):

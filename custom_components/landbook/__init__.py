@@ -329,11 +329,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "online": True,
         "uid": uid,
         "all_codes": [p["code"] for p in properties],
+        # Codes local control actually reports on (populated below when
+        # local_client is connected) — anything not in this set (e.g. a
+        # synthetic property like temperature that isn't in the TSL model
+        # at all, see _find_temperature_prop) has no local equivalent, so
+        # cloud MQTT's bus_ reports for it must keep flowing even while
+        # local is otherwise authoritative. See _mqtt_callback's bus_
+        # branch below.
+        "local_codes": set(),
     }
     domain_data[entry.entry_id]["send_command"] = _make_send_command(hass, entry.entry_id)
 
     if local_client is not None:
         id_to_code = {p["id"]: p["code"] for p in properties if "id" in p}
+        domain_data[entry.entry_id]["local_codes"] = set(id_to_code.values())
         local_client.on_update = _make_local_state_handler(hass, entry.entry_id, id_to_code)
         # Best-effort nudge — on real hardware tested so far, a device
         # pushes its own properties continuously regardless of whether this
@@ -354,27 +363,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             accounts[uid]["last_activity"] = time.monotonic()
 
         if suffix == "bus_":
-            if entry_data.get("local_client") is not None:
-                # Local control is connected and already feeding this
-                # device's state continuously and independently (see
-                # _make_local_state_handler) — trust it over cloud MQTT
-                # here rather than blending both. Cloud MQTT's bus_
-                # channel has had intermittent reliability problems (#27);
-                # blending would let a stale or delayed cloud update
-                # silently overwrite a correct local one. Falls back to
-                # this cloud path automatically the moment local isn't
-                # connected (nothing else needs to change for that).
-                return
+            # Local control is authoritative for any code it reports on
+            # (see _make_local_state_handler) — cloud MQTT's bus_ channel
+            # has had intermittent reliability problems (#27), and blending
+            # both would let a stale or delayed cloud update silently
+            # overwrite a correct local one. But not every code has a local
+            # equivalent — e.g. temperature is often a synthetic property
+            # absent from the TSL model entirely (_find_temperature_prop)
+            # and only ever arrives via cloud — so only codes local control
+            # actually covers (entry_data["local_codes"]) are dropped here;
+            # everything else still updates from cloud same as always.
+            local_codes = entry_data.get("local_codes") or set()
             data_block = payload.get("data", payload)
             kv = data_block.get("kv", {})
-            changed_keys: set[str] = set()
             if isinstance(kv, dict):
-                entry_data["state"].update(kv)
-                changed_keys = set(kv.keys())
+                items = [kv]
             elif isinstance(kv, list):
-                for item in kv:
-                    entry_data["state"].update(item)
-                    changed_keys.update(item.keys())
+                items = kv
+            else:
+                items = []
+            changed_keys: set[str] = set()
+            for item in items:
+                for code, value in item.items():
+                    if code in local_codes:
+                        continue
+                    entry_data["state"][code] = value
+                    changed_keys.add(code)
             if changed_keys:
                 hass.loop.call_soon_threadsafe(
                     hass.async_create_task,
