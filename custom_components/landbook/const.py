@@ -79,3 +79,14 @@ SWITCH_ICON_MAP = {
 
 # Temperature property detection
 TEMPERATURE_NAME_HINTS = ("temperature", "temp")
+
+# Temperature isn't part of any known TSL model (see
+# __init__._find_temperature_prop's synthetic fallback), so there's no
+# generic way to know its local-LAN TTLV field id — it has to be confirmed
+# per product by observing real device traffic. Confirmed via
+# landbook-ha#27 diagnostics: field id 21 on productKey p11vkW (OmniBreeze
+# DC2313R) reported a TYPE_NUMBER value matching the device's display
+# exactly. Deliberately scoped by product key rather than assumed
+# universal — an untested product's id 21 could mean something else
+# entirely.
+LOCAL_TEMPERATURE_IDS = {"p11vkW": 21}

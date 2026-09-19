@@ -44,6 +44,7 @@ from .const import (
     DOMAIN,
     LOCAL_CONNECT_TIMEOUT,
     LOCAL_DISCOVERY_TIMEOUT,
+    LOCAL_TEMPERATURE_IDS,
     MQTT_WATCHDOG_CHECK_INTERVAL,
     MQTT_WATCHDOG_STALE_INTERVAL,
     OSCILLATION_NAME_HINTS,
@@ -331,17 +332,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "all_codes": [p["code"] for p in properties],
         # Codes local control actually reports on (populated below when
         # local_client is connected) — anything not in this set (e.g. a
-        # synthetic property like temperature that isn't in the TSL model
-        # at all, see _find_temperature_prop) has no local equivalent, so
-        # cloud MQTT's bus_ reports for it must keep flowing even while
-        # local is otherwise authoritative. See _mqtt_callback's bus_
-        # branch below.
+        # synthetic property like temperature on an untested product, see
+        # _find_temperature_prop) has no known local equivalent, so cloud
+        # MQTT's bus_ reports for it must keep flowing even while local is
+        # otherwise authoritative. See _mqtt_callback's bus_ branch below.
         "local_codes": set(),
     }
     domain_data[entry.entry_id]["send_command"] = _make_send_command(hass, entry.entry_id)
 
     if local_client is not None:
         id_to_code = {p["id"]: p["code"] for p in properties if "id" in p}
+        # Temperature isn't in the TSL model, so it's never in `properties`
+        # above — but for products where its local field id has been
+        # confirmed (LOCAL_TEMPERATURE_IDS), map it too, so local control
+        # covers it instead of depending on cloud's bus_ channel, which has
+        # proven unreliable (#27). Guarded by `synthetic` so a product that
+        # *does* have a real TSL temperature property (with its own id)
+        # never gets silently overridden by this hardcoded one.
+        temp_id = LOCAL_TEMPERATURE_IDS.get(pk)
+        if temp_id is not None and temperature_prop and temperature_prop.get("synthetic"):
+            id_to_code[temp_id] = "temperature"
         domain_data[entry.entry_id]["local_codes"] = set(id_to_code.values())
         local_client.on_update = _make_local_state_handler(hass, entry.entry_id, id_to_code)
         # Best-effort nudge — on real hardware tested so far, a device
@@ -438,7 +448,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
 
     mqtt_client._on_reconnect = _request_all_states
-    mqtt_client.send_read(device_id, pk, dk, [p["code"] for p in properties])
+    if local_client is None:
+        # Same rationale as _request_all_states above — pointless and
+        # failure-prone to ask cloud to read a device local control is
+        # already connected to.
+        mqtt_client.send_read(device_id, pk, dk, [p["code"] for p in properties])
 
     # Also seed initial state from REST API as a fallback
     try:
@@ -467,7 +481,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         elif isinstance(tsl_info, dict):
             initial_state = tsl_info
         _LOGGER.debug("Initial state seeded for %s: %s", dk, initial_state)
-        hass.data[DOMAIN][entry.entry_id]["state"] = initial_state
+        # Merge rather than replace, and skip codes local control already
+        # covers (entry_data["local_codes"]) — this REST snapshot can be
+        # stale for a device that's mostly quiet on cloud in favor of local
+        # (see PR #47's temperature fix for the same class of issue), and
+        # replacing outright could stomp a correct value local already
+        # pushed (or is about to) with a stale cloud one, e.g. showing a
+        # fan that's actually on as off after a restart.
+        local_codes = hass.data[DOMAIN][entry.entry_id].get("local_codes") or set()
+        hass.data[DOMAIN][entry.entry_id]["state"].update(
+            {code: value for code, value in initial_state.items() if code not in local_codes}
+        )
     except LandbookAPIError as exc:
         _LOGGER.warning("Could not fetch initial device attributes for %s: %s", dk, exc)
 
