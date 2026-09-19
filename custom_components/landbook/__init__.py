@@ -33,7 +33,6 @@ from .const import (
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
     CONF_FW_VERSION,
-    CONF_LOCAL_CONTROL_ENABLED,
     CONF_MQTT_WATCHDOG_ENABLED,
     CONF_PRODUCT_KEY,
     CONF_REFRESH_TOKEN,
@@ -297,14 +296,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     accounts[uid]["entries"].add(entry.entry_id)
 
-    local_control_wanted = entry.options.get(
-        CONF_LOCAL_CONTROL_ENABLED, entry.data.get(CONF_LOCAL_CONTROL_ENABLED, False)
-    )
-    local_client: LandbookLocalClient | None = None
-    if local_control_wanted:
-        local_client = await _connect_local_client(hass, entry, accounts, client_lock, uid, pk, dk)
-        if local_client is not None:
-            accounts[uid]["local_clients"][entry.entry_id] = local_client
+    # Local-LAN control is always attempted, no opt-in toggle — it's
+    # already designed to degrade gracefully to cloud MQTT on any failure
+    # (missing authKey, discovery timeout, connect/login rejection), which
+    # is exactly what every entry already did before this existed. Given
+    # cloud MQTT's own reliability problems (#27), attempting local
+    # unconditionally is strictly safer than requiring someone to
+    # discover and flip a setting to get it.
+    local_client = await _connect_local_client(hass, entry, accounts, client_lock, uid, pk, dk)
+    if local_client is not None:
+        accounts[uid]["local_clients"][entry.entry_id] = local_client
 
     domain_data[entry.entry_id] = {
         "mqtt_client": mqtt_client,
@@ -350,6 +351,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             accounts[uid]["last_activity"] = time.monotonic()
 
         if suffix == "bus_":
+            if entry_data.get("local_client") is not None:
+                # Local control is connected and already feeding this
+                # device's state continuously and independently (see
+                # _make_local_state_handler) — trust it over cloud MQTT
+                # here rather than blending both. Cloud MQTT's bus_
+                # channel has had intermittent reliability problems (#27);
+                # blending would let a stale or delayed cloud update
+                # silently overwrite a correct local one. Falls back to
+                # this cloud path automatically the moment local isn't
+                # connected (nothing else needs to change for that).
+                return
             data_block = payload.get("data", payload)
             kv = data_block.get("kv", {})
             changed_keys: set[str] = set()

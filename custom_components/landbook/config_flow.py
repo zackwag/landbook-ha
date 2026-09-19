@@ -22,7 +22,6 @@ from .const import (
     CONF_DEVICE_KEY,
     CONF_DEVICE_NAME,
     CONF_EMAIL,
-    CONF_LOCAL_CONTROL_ENABLED,
     CONF_MQTT_WATCHDOG_ENABLED,
     CONF_PASSWORD,
     CONF_PRODUCT_KEY,
@@ -47,7 +46,6 @@ class LandbookOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         if user_input is not None:
-            self._sync_local_control_to_account(user_input[CONF_LOCAL_CONTROL_ENABLED])
             return self.async_create_entry(title="", data=user_input)
 
         current_unit = self.config_entry.options.get(
@@ -62,10 +60,6 @@ class LandbookOptionsFlow(config_entries.OptionsFlow):
             CONF_MQTT_WATCHDOG_ENABLED,
             self.config_entry.data.get(CONF_MQTT_WATCHDOG_ENABLED, True),
         )
-        current_local_control = self.config_entry.options.get(
-            CONF_LOCAL_CONTROL_ENABLED,
-            self.config_entry.data.get(CONF_LOCAL_CONTROL_ENABLED, False),
-        )
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
@@ -75,33 +69,9 @@ class LandbookOptionsFlow(config_entries.OptionsFlow):
                     ),
                     vol.Required(CONF_SIGNAL_STRENGTH, default=current_signal): bool,
                     vol.Required(CONF_MQTT_WATCHDOG_ENABLED, default=current_watchdog): bool,
-                    vol.Required(CONF_LOCAL_CONTROL_ENABLED, default=current_local_control): bool,
                 }
             ),
         )
-
-    def _sync_local_control_to_account(self, enabled: bool) -> None:
-        """Propagate CONF_LOCAL_CONTROL_ENABLED to every other config entry
-        on the same account (same CONF_UID) — it's an account-wide setting,
-        not a per-device one, so one change should apply to every fan.
-        Updating a sibling's options fires its own registered update
-        listener (_async_options_updated in __init__.py), which reloads it
-        for the change to take effect — no separate reload call needed here.
-        """
-        account_uid = self.config_entry.data.get(CONF_UID)
-        if account_uid is None:
-            return
-        for sibling in self.hass.config_entries.async_entries(DOMAIN):
-            if sibling.entry_id == self.config_entry.entry_id:
-                continue
-            if sibling.data.get(CONF_UID) != account_uid:
-                continue
-            if sibling.options.get(CONF_LOCAL_CONTROL_ENABLED) == enabled:
-                continue
-            self.hass.config_entries.async_update_entry(
-                sibling,
-                options={**sibling.options, CONF_LOCAL_CONTROL_ENABLED: enabled},
-            )
 
 
 class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -241,16 +211,12 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_PRODUCT_KEY: device["productKey"],
                         CONF_DEVICE_NAME: device["deviceName"],
                         CONF_PRODUCT_NAME: device.get("productName", ""),
-                        # Always stored, regardless of the local-control
-                        # answer below — so turning it on later (via
-                        # Options) never requires removing and re-adding
-                        # the device just to pick up the key.
+                        # Local-LAN control (see __init__._connect_local_client)
+                        # is always attempted, no opt-in toggle — this is what
+                        # it needs to log in. Stored unconditionally; if it's
+                        # missing (e.g. this API response didn't include it),
+                        # local control just falls back to cloud MQTT.
                         CONF_AUTH_KEY: device.get("authKey", ""),
-                        # Offered here so a new device doesn't need a trip
-                        # to Options just to turn this on; still defaults
-                        # to the account's current setting so it stays
-                        # grouped unless the user overrides it here.
-                        CONF_LOCAL_CONTROL_ENABLED: user_input[CONF_LOCAL_CONTROL_ENABLED],
                     },
                 )
 
@@ -261,23 +227,7 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required("device"): vol.In(device_names),
-                    vol.Required(
-                        CONF_LOCAL_CONTROL_ENABLED, default=self._account_local_control_enabled()
-                    ): bool,
                 }
             ),
             errors=errors,
         )
-
-    def _account_local_control_enabled(self) -> bool:
-        """Whatever CONF_LOCAL_CONTROL_ENABLED is currently set to on any
-        existing entry for this account — False if this is the account's
-        first device."""
-        for existing in self.hass.config_entries.async_entries(DOMAIN):
-            if existing.data.get(CONF_UID) != self._uid:
-                continue
-            return existing.options.get(
-                CONF_LOCAL_CONTROL_ENABLED,
-                existing.data.get(CONF_LOCAL_CONTROL_ENABLED, False),
-            )
-        return False

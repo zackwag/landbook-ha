@@ -124,9 +124,9 @@ class TestUnloadEntry:
 
     @pytest.mark.asyncio
     async def test_unload_disconnects_local_client(self, mock_landbook_api):
-        """A device with local control enabled should have its own local
-        connection disconnected on unload, independent of the shared MQTT
-        client (which stays up for any other entries on the account)."""
+        """A device with a live local-LAN connection should have it
+        disconnected on unload, independent of the shared MQTT client
+        (which stays up for any other entries on the account)."""
         from landbook_api.local_client import DiscoveredDevice
 
         from custom_components.landbook import async_setup, async_setup_entry, async_unload_entry
@@ -142,7 +142,6 @@ class TestUnloadEntry:
 
         entry = make_config_entry(hass, entry_id="e1", uid="u1")
         entry.data[CONF_AUTH_KEY] = "dGVzdGtleQ=="
-        entry.data["local_control_enabled"] = True
         register_entry(hass, entry)
 
         await async_setup(hass, {})

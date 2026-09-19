@@ -216,7 +216,7 @@ class TestMakeSendCommand:
         send_command({"power": True})  # must not raise
 
 
-class TestSetupEntryWithLocalControlEnabled:
+class TestSetupEntryLocalControl:
     @pytest.mark.asyncio
     async def test_local_client_connected_and_used_for_writes(self, mock_landbook_api):
         from custom_components.landbook import async_setup, async_setup_entry
@@ -237,7 +237,6 @@ class TestSetupEntryWithLocalControlEnabled:
 
         entry = make_config_entry(hass, entry_id="e1", uid="u1")
         entry.data[CONF_AUTH_KEY] = "dGVzdGtleQ=="
-        entry.data["local_control_enabled"] = True
         register_entry(hass, entry)
 
         await async_setup(hass, {})
@@ -251,7 +250,11 @@ class TestSetupEntryWithLocalControlEnabled:
         api.mqtt.send_write.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_disabled_by_default_uses_cloud_only(self, mock_landbook_api):
+    async def test_missing_auth_key_uses_cloud_only(self, mock_landbook_api):
+        """Local control is always attempted, no opt-in toggle — but it
+        still needs an authKey to log in, so entries without one (e.g. added
+        before local control existed, or an API response that omitted it)
+        fall back to cloud MQTT exactly as before."""
         from custom_components.landbook import async_setup, async_setup_entry
 
         hass = make_hass()
@@ -287,7 +290,6 @@ class TestSetupEntryWithLocalControlEnabled:
 
         entry = make_config_entry(hass, entry_id="e1", uid="u1")
         entry.data[CONF_AUTH_KEY] = "dGVzdGtleQ=="
-        entry.data["local_control_enabled"] = True
         register_entry(hass, entry)
 
         await async_setup(hass, {})
@@ -306,7 +308,7 @@ class TestSetupEntryWithLocalControlEnabled:
         assert entry_data["state"]["power"] is True
 
     @pytest.mark.asyncio
-    async def test_disabled_local_control_never_sets_on_update(self, mock_landbook_api):
+    async def test_no_local_client_never_touches_local_client_mock(self, mock_landbook_api):
         from custom_components.landbook import async_setup, async_setup_entry
 
         hass = make_hass()
@@ -318,11 +320,74 @@ class TestSetupEntryWithLocalControlEnabled:
         await async_setup(hass, {})
         await async_setup_entry(hass, entry)
 
-        # local control never activated for this entry, so the local
-        # client mock (which only gets touched inside the `if local_client
-        # is not None` block) should never have been used at all.
+        # No authKey on this entry, so local control never connects, and
+        # the local client mock (which only gets touched inside the `if
+        # local_client is not None` block) should never have been used.
         api.local_client.read.assert_not_called()
         assert hass.data[DOMAIN]["e1"]["local_client"] is None
+
+
+class TestMqttCallbackLocalFirst:
+    """bus_ (cloud state report) handling inside _mqtt_callback, wired up
+    through async_setup_entry, must defer entirely to local control once
+    it's connected rather than blending both sources (see __init__.py's
+    _mqtt_callback bus_ branch for the rationale)."""
+
+    async def _setup_with_local(self, mock_landbook_api):
+        from custom_components.landbook import async_setup, async_setup_entry
+
+        hass = make_hass()
+        api = mock_landbook_api
+        api.discover_devices.return_value = [
+            DiscoveredDevice(
+                product_key="pk1", device_key="dk1", ip="10.0.0.5", port=6607, version=1
+            )
+        ]
+
+        entry = make_config_entry(hass, entry_id="e1", uid="u1")
+        entry.data[CONF_AUTH_KEY] = "dGVzdGtleQ=="
+        register_entry(hass, entry)
+
+        await async_setup(hass, {})
+        await async_setup_entry(hass, entry)
+
+        entry_data = hass.data[DOMAIN]["e1"]
+        assert entry_data["local_client"] is api.local_client  # sanity check
+        mqtt_callback = api.mqtt.subscribe_device.call_args[0][1]
+        return hass, entry_data, mqtt_callback
+
+    @pytest.mark.asyncio
+    async def test_cloud_bus_ignored_when_local_client_connected(self, mock_landbook_api):
+        hass, entry_data, mqtt_callback = await self._setup_with_local(mock_landbook_api)
+        hass.loop.call_soon_threadsafe.reset_mock()
+
+        mqtt_callback("bus_", {"data": {"kv": {"power": True}}})
+
+        assert "power" not in entry_data["state"]
+        hass.loop.call_soon_threadsafe.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_cloud_bus_processed_when_no_local_client(self, mock_landbook_api):
+        from custom_components.landbook import async_setup, async_setup_entry
+
+        hass = make_hass()
+        api = mock_landbook_api  # no authKey -> local control never connects
+
+        entry = make_config_entry(hass, entry_id="e1", uid="u1")
+        register_entry(hass, entry)
+
+        await async_setup(hass, {})
+        await async_setup_entry(hass, entry)
+
+        entry_data = hass.data[DOMAIN]["e1"]
+        assert entry_data["local_client"] is None  # sanity check
+        mqtt_callback = api.mqtt.subscribe_device.call_args[0][1]
+        hass.loop.call_soon_threadsafe.reset_mock()
+
+        mqtt_callback("bus_", {"data": {"kv": {"power": True}}})
+
+        assert entry_data["state"]["power"] is True
+        hass.loop.call_soon_threadsafe.assert_called_once()
 
 
 class TestMakeLocalStateHandler:
