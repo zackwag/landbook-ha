@@ -19,6 +19,11 @@ CONF_PRODUCT_NAME = "product_name"
 # present on entries created after that support landed — older entries fall
 # back to cloud MQTT if local control is enabled without one on file.
 CONF_AUTH_KEY = "auth_key"
+# Cached TSL property model (see async_get_tsl) — fetched once and reused
+# across restarts instead of an unconditional REST call every setup. TSL
+# rarely changes; remove and re-add the device to force a refresh if it
+# ever does, same as CONF_AUTH_KEY's existing precedent.
+CONF_TSL_CACHE = "tsl_cache"
 CONF_FW_VERSION = "fw_version"
 CONF_TEMP_UNIT = "temperature_unit"
 TEMP_UNIT_F = "°F"
