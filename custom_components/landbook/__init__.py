@@ -367,6 +367,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             id_to_code[temp_id] = "temperature"
         domain_data[entry.entry_id]["local_codes"] = set(id_to_code.values())
         local_client.on_update = _make_local_state_handler(hass, entry.entry_id, id_to_code)
+        local_client.on_disconnect = _make_local_disconnect_handler(hass, entry.entry_id, uid, dk)
         # Best-effort nudge — on real hardware tested so far, a device
         # pushes its own properties continuously regardless of whether this
         # is called, so this mostly just matches the protocol rather than
@@ -680,11 +681,13 @@ def _make_local_state_handler(hass: HomeAssistant, entry_id: str, id_to_code: di
 
     Merges incoming property pushes into the same shared state dict and
     fires the same HA event that cloud MQTT's bus_ handler already
-    feeds — so entities need no changes to benefit from this. Cloud MQTT
-    keeps updating that same dict independently and unconditionally;
-    local pushes are additive/redundant, not a replacement, so losing the
-    local connection (it has no auto-reconnect of its own yet) never loses
-    state tracking, just the faster/redundant local channel.
+    feeds — so entities need no changes to benefit from this. Cloud MQTT's
+    bus_ handler skips any code local control covers rather than blending
+    (see _mqtt_callback), so this is now the *only* source for those codes
+    while local is connected — which is exactly why losing the connection
+    unexpectedly has to clear entry_data["local_client"] (see
+    _make_local_disconnect_handler below), rather than leaving cloud
+    silently starved of updates it thinks it should keep skipping.
 
     Called from LandbookLocalClient's background receive thread, like
     paho's MQTT callback — must marshal back onto the event loop via
@@ -713,6 +716,46 @@ def _make_local_state_handler(hass: HomeAssistant, entry_id: str, id_to_code: di
             )
 
     return _on_local_update
+
+
+def _make_local_disconnect_handler(hass: HomeAssistant, entry_id: str, uid: str, dk: str):
+    """Build the callback wired to LandbookLocalClient.on_disconnect.
+
+    Local control has no auto-reconnect of its own yet, so once the
+    connection drops unexpectedly there's nothing to wait for — clear
+    entry_data["local_client"] (and the account-level local_clients entry)
+    so every local-vs-cloud fork in this module (_make_send_command,
+    _mqtt_callback's bus_ skip, the cloud read-request skips) immediately
+    treats this device as cloud-only again, instead of silently starving
+    on a dead reference until the next full HA restart.
+
+    This does NOT touch entry_data["online"] — a dead local socket doesn't
+    mean the device itself is offline (it could just be a local network
+    hiccup between HA and the device specifically), so cloud MQTT's onl_
+    event stays the sole source of truth for that.
+
+    Called from LandbookLocalClient's background receive thread, like
+    on_update — but unlike on_update, this needs no call_soon_threadsafe,
+    since it only mutates plain dict/set state and fires no HA event.
+    """
+
+    def _on_local_disconnect() -> None:
+        entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
+        if entry_data is None or entry_data.get("local_client") is None:
+            return
+        _LOGGER.warning(
+            "Landbook: local connection to %s lost unexpectedly — "
+            "falling back to cloud MQTT for the rest of this session",
+            dk,
+        )
+        entry_data["local_client"] = None
+        entry_data["local_codes"] = set()
+        accounts = hass.data.get(DOMAIN, {}).get("_accounts", {})
+        acct = accounts.get(uid)
+        if acct is not None:
+            acct["local_clients"].pop(entry_id, None)
+
+    return _on_local_disconnect
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
