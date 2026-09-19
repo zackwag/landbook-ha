@@ -274,12 +274,7 @@ class LandbookFan(FanEntity):
         return self._preset_modes[self._current_mode_idx].lower() == "auto"
 
     def _send(self, props: dict) -> None:
-        self._data["mqtt_client"].send_write(
-            self._data["device_id"],
-            self._data["pk"],
-            self._data["dk"],
-            props,
-        )
+        self._data["send_command"](props)
 
 
 def _suggest_area(device_name: str, product_name: str) -> str | None:

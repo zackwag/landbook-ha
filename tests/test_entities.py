@@ -47,6 +47,7 @@ def _make_data(state=None, online=True, power_on=True):
         "state": {"power": power_on, **(state or {})},
         "online": online,
         "mqtt_client": MagicMock(),
+        "send_command": MagicMock(),
         "device_id": "qdpk1dk1",
         "pk": "pk1",
         "dk": "dk1",
@@ -406,3 +407,115 @@ class TestNumberEntity:
         assert num._attr_native_min_value == 0.0
         assert num._attr_native_max_value == 100.0
         assert num._attr_native_step == 1.0
+
+
+# ---------------------------------------------------------------------------
+# Commands — every entity type's write path goes through
+# self._data["send_command"](props) (see __init__._make_send_command), not
+# a direct mqtt_client.send_write() call, so local control can intercept it.
+# ---------------------------------------------------------------------------
+
+
+class TestLightCommands:
+    def _make_light(self):
+        entry = _make_entry()
+        data = _make_data()
+        prop = {"code": "light", "name": "Light", "dataType": "BOOL"}
+        light = LandbookLight(MagicMock(), entry, data, prop)
+        _patch_entity(light)
+        return light, data
+
+    async def test_turn_on_sends_true(self):
+        light, data = self._make_light()
+        await light.async_turn_on()
+        data["send_command"].assert_called_once_with({"light": True})
+
+    async def test_turn_off_sends_false(self):
+        light, data = self._make_light()
+        await light.async_turn_off()
+        data["send_command"].assert_called_once_with({"light": False})
+
+
+class TestSwitchCommands:
+    def _make_switch(self):
+        entry = _make_entry()
+        data = _make_data()
+        prop = {"code": "sound", "name": "Sound", "dataType": "BOOL"}
+        sw = LandbookSwitch(MagicMock(), entry, data, prop)
+        _patch_entity(sw)
+        return sw, data
+
+    async def test_turn_on_sends_true(self):
+        sw, data = self._make_switch()
+        await sw.async_turn_on()
+        data["send_command"].assert_called_once_with({"sound": True})
+
+    async def test_turn_off_sends_false(self):
+        sw, data = self._make_switch()
+        await sw.async_turn_off()
+        data["send_command"].assert_called_once_with({"sound": False})
+
+
+class TestNumberCommands:
+    def _make_number(self):
+        entry = _make_entry()
+        data = _make_data()
+        prop = {
+            "code": "brightness",
+            "name": "Brightness",
+            "dataType": "INT",
+            "specs": {"min": "0", "max": "100", "step": "1"},
+        }
+        num = LandbookNumber(MagicMock(), entry, data, prop)
+        _patch_entity(num)
+        return num, data
+
+    async def test_set_value_sends_int(self):
+        num, data = self._make_number()
+        await num.async_set_native_value(42.0)
+        data["send_command"].assert_called_once_with({"brightness": 42})
+
+
+class TestGenericSelectCommands:
+    def _make_select(self):
+        entry = _make_entry()
+        data = _make_data()
+        prop = {
+            "code": "custom_mode",
+            "name": "Custom",
+            "dataType": "ENUM",
+            "specs": [{"name": "Low", "value": "0"}, {"name": "High", "value": "2"}],
+        }
+        sel = LandbookSelect(MagicMock(), entry, data, prop)
+        _patch_entity(sel)
+        return sel, data
+
+    async def test_select_option_sends_mapped_value(self):
+        sel, data = self._make_select()
+        await sel.async_select_option("High")
+        data["send_command"].assert_called_once_with({"custom_mode": 2})
+
+    async def test_unknown_option_sends_nothing(self):
+        sel, data = self._make_select()
+        await sel.async_select_option("Nonexistent")
+        data["send_command"].assert_not_called()
+
+
+class TestCountdownCommands:
+    def _make_countdown(self):
+        entry = _make_entry()
+        data = _make_data()
+        prop = {
+            "code": "countdown",
+            "name": "Countdown",
+            "dataType": "ENUM",
+            "specs": [{"name": "0", "value": "0"}, {"name": "2", "value": "2"}],
+        }
+        cd = LandbookCountdown(MagicMock(), entry, data, prop)
+        _patch_entity(cd)
+        return cd, data
+
+    async def test_select_option_sends_mapped_value(self):
+        cd, data = self._make_countdown()
+        await cd.async_select_option("2 h")
+        data["send_command"].assert_called_once_with({"countdown": 2})

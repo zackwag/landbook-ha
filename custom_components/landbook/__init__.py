@@ -25,11 +25,15 @@ from landbook_api import (
     async_refresh_token,
     refresh_token,
 )
+from landbook_api.local_client import LandbookLocalClient, discover_devices
+from landbook_api.local_protocol import field_for_property
 
 from .const import (
+    CONF_AUTH_KEY,
     CONF_BEARER_TOKEN,
     CONF_DEVICE_KEY,
     CONF_FW_VERSION,
+    CONF_LOCAL_CONTROL_ENABLED,
     CONF_MQTT_WATCHDOG_ENABLED,
     CONF_PRODUCT_KEY,
     CONF_REFRESH_TOKEN,
@@ -38,6 +42,8 @@ from .const import (
     CONF_UID,
     DISPLAY_LIGHT_HINTS,
     DOMAIN,
+    LOCAL_CONNECT_TIMEOUT,
+    LOCAL_DISCOVERY_TIMEOUT,
     MQTT_WATCHDOG_CHECK_INTERVAL,
     MQTT_WATCHDOG_STALE_INTERVAL,
     OSCILLATION_NAME_HINTS,
@@ -277,6 +283,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "cancel_proactive_refresh": cancel_proactive_refresh,
                 "cancel_watchdog": cancel_watchdog,
                 "last_activity": time.monotonic(),
+                # None = discovery not yet attempted for this account; {} =
+                # attempted and found nothing (still valid, avoids retrying
+                # every entry setup). Populated lazily by whichever entry
+                # first wants local control — see _connect_local_client.
+                "local_devices": None,
+                "local_clients": {},
             }
             _LOGGER.info("Landbook: shared MQTT connection established for account %s", uid)
         else:
@@ -285,8 +297,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     accounts[uid]["entries"].add(entry.entry_id)
 
+    local_control_wanted = entry.options.get(
+        CONF_LOCAL_CONTROL_ENABLED, entry.data.get(CONF_LOCAL_CONTROL_ENABLED, False)
+    )
+    local_client: LandbookLocalClient | None = None
+    if local_control_wanted:
+        local_client = await _connect_local_client(hass, entry, accounts, client_lock, uid, pk, dk)
+        if local_client is not None:
+            accounts[uid]["local_clients"][entry.entry_id] = local_client
+
     domain_data[entry.entry_id] = {
         "mqtt_client": mqtt_client,
+        "local_client": local_client,
+        "properties": properties,
         "device_id": device_id,
         "pk": pk,
         "dk": dk,
@@ -303,6 +326,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "uid": uid,
         "all_codes": [p["code"] for p in properties],
     }
+    domain_data[entry.entry_id]["send_command"] = _make_send_command(hass, entry.entry_id)
 
     def _mqtt_callback(suffix: str, payload: Any) -> None:
         entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
@@ -412,6 +436,107 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+async def _connect_local_client(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    accounts: dict,
+    client_lock: asyncio.Lock,
+    uid: str,
+    pk: str,
+    dk: str,
+) -> LandbookLocalClient | None:
+    """Best-effort attempt to establish local-LAN control for one device.
+
+    Local control is opt-in and must never block or break entry setup — any
+    failure here (missing authKey, discovery timeout, connect/login
+    failure) just logs a warning and returns None, leaving the caller to
+    fall back to the always-available cloud MQTT path.
+    """
+    auth_key = entry.data.get(CONF_AUTH_KEY)
+    if not auth_key:
+        _LOGGER.warning(
+            "Landbook: local control enabled for %s but no authKey on file "
+            "(remove and re-add the device to pick one up) — using cloud MQTT",
+            dk,
+        )
+        return None
+
+    # Discovery is a broadcast + listen, shared once per account rather than
+    # repeated per device — see the "local_devices" cache comment where
+    # accounts[uid] is created.
+    async with client_lock:
+        if accounts[uid]["local_devices"] is None:
+            try:
+                discovered = await hass.async_add_executor_job(
+                    discover_devices, LOCAL_DISCOVERY_TIMEOUT
+                )
+                accounts[uid]["local_devices"] = {
+                    (d.product_key, d.device_key): d for d in discovered
+                }
+            except Exception as exc:  # noqa: BLE001 - discovery must not break setup
+                _LOGGER.warning("Landbook: local discovery failed for account %s: %s", uid, exc)
+                accounts[uid]["local_devices"] = {}
+        match = accounts[uid]["local_devices"].get((pk, dk))
+
+    if match is None:
+        _LOGGER.warning(
+            "Landbook: local control enabled for %s but not found via LAN discovery "
+            "— using cloud MQTT",
+            dk,
+        )
+        return None
+
+    local_client = LandbookLocalClient(pk, dk, auth_key, match.ip, match.port)
+    try:
+        await hass.async_add_executor_job(local_client.connect, LOCAL_CONNECT_TIMEOUT)
+    except ConnectionError as exc:
+        _LOGGER.warning(
+            "Landbook: local control connect failed for %s (%s) — using cloud MQTT", dk, exc
+        )
+        return None
+
+    _LOGGER.info("Landbook: local control connected for %s", dk)
+    return local_client
+
+
+def _make_send_command(hass: HomeAssistant, entry_id: str):
+    """Build the callable entities use to issue a write, replacing direct
+    self._data["mqtt_client"].send_write(...) calls. Prefers the local
+    connection when one is up for this device; any failure there (or its
+    absence) falls back to the shared cloud MQTT client, matching the
+    always-on cloud behavior every entry had before local control existed.
+    """
+
+    def _send_command(props: dict) -> None:
+        entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
+        if entry_data is None:
+            return
+
+        local_client = entry_data.get("local_client")
+        if local_client is not None:
+            try:
+                fields = [
+                    field_for_property(p["id"], p["dataType"], props[p["code"]])
+                    for p in entry_data["properties"]
+                    if p["code"] in props and "id" in p
+                ]
+                if fields:
+                    local_client.write(fields)
+                    return
+            except Exception as exc:  # noqa: BLE001 - fall back to cloud on any local failure
+                _LOGGER.warning(
+                    "Landbook: local write failed for %s (%s), falling back to cloud MQTT",
+                    entry_data.get("dk"),
+                    exc,
+                )
+
+        entry_data["mqtt_client"].send_write(
+            entry_data["device_id"], entry_data["pk"], entry_data["dk"], props
+        )
+
+    return _send_command
+
+
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
     if entry.state is not ConfigEntryState.LOADED:
         # A failed_unload / setup_error entry must not be reloaded — reload
@@ -508,6 +633,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         uid = entry_data.get("uid")
         accounts = domain_data.get("_accounts", {})
         acct = accounts.get(uid) if uid else None
+
+        # Local connections are per-device, unlike the shared account MQTT
+        # client below — disconnect this entry's own regardless of whether
+        # it's the last entry on the account.
+        local_client = entry_data.get("local_client")
+        if local_client is not None:
+            await hass.async_add_executor_job(local_client.disconnect)
+        if acct is not None:
+            acct.get("local_clients", {}).pop(entry.entry_id, None)
+
         if acct is not None:
             acct["entries"].discard(entry.entry_id)
             if not acct["entries"]:

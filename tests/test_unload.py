@@ -121,3 +121,36 @@ class TestUnloadEntry:
 
         assert result is False
         assert "e1" in hass.data[DOMAIN]
+
+    @pytest.mark.asyncio
+    async def test_unload_disconnects_local_client(self, mock_landbook_api):
+        """A device with local control enabled should have its own local
+        connection disconnected on unload, independent of the shared MQTT
+        client (which stays up for any other entries on the account)."""
+        from landbook_api.local_client import DiscoveredDevice
+
+        from custom_components.landbook import async_setup, async_setup_entry, async_unload_entry
+        from custom_components.landbook.const import CONF_AUTH_KEY
+
+        hass = make_hass()
+        api = mock_landbook_api
+        api.discover_devices.return_value = [
+            DiscoveredDevice(
+                product_key="pk1", device_key="dk1", ip="10.0.0.5", port=6607, version=1
+            )
+        ]
+
+        entry = make_config_entry(hass, entry_id="e1", uid="u1")
+        entry.data[CONF_AUTH_KEY] = "dGVzdGtleQ=="
+        entry.data["local_control_enabled"] = True
+        register_entry(hass, entry)
+
+        await async_setup(hass, {})
+        await async_setup_entry(hass, entry)
+        assert hass.data[DOMAIN]["e1"]["local_client"] is api.local_client
+
+        hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+        result = await async_unload_entry(hass, entry)
+
+        assert result is True
+        api.local_client.disconnect.assert_called_once()
