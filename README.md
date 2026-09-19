@@ -1,6 +1,9 @@
 # Landbook — Home Assistant HACS Integration
 
-A HACS custom integration for Landbook smart home devices, reverse-engineered from the Landbook iOS app (Netprisma/Landecia cloud). Supports real-time control and state via MQTT over TLS — no polling.
+A HACS custom integration for Landbook smart home devices, reverse-engineered from the official Landbook app. Devices are controlled directly over your local network whenever reachable, falling back automatically to the Landbook cloud (MQTT over TLS) when they're not — no polling either way.
+
+> [!IMPORTANT]
+> **A Landbook account is required, even though control happens locally.** This integration doesn't provision devices onto your Wi-Fi or pair them — that only happens through the official **Landbook** app, which is also where you create the account this integration logs into. If your fan's manual never mentioned the Landbook app, or you haven't created a Landbook account and added your device there first, set that up before trying this integration; it has nothing to connect to otherwise.
 
 ## Entities
 
@@ -39,6 +42,7 @@ Copy `custom_components/landbook/` into your HA `config/custom_components/` dire
 
 ## Setup
 
+0. Make sure your device is already set up in the official **Landbook** app first (Wi-Fi provisioning + account creation) — this integration connects to devices already on your account, it doesn't add new ones to your network.
 1. Go to **Settings → Devices & Services → Add Integration → Landbook**
 2. Select your region (US, EU, or CN)
 3. Enter your Landbook account email and password

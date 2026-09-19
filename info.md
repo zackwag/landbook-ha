@@ -1,6 +1,6 @@
 # Landbook
 
-Control fans and other devices running on the **Landbook / Landecia** cloud platform via real-time MQTT — no polling.
+Control fans and other **Landbook / Landecia** devices directly over your local network whenever reachable, falling back automatically to the cloud (real-time MQTT, no polling) when they're not.
 
 ## What you get
 
@@ -10,11 +10,11 @@ Control fans and other devices running on the **Landbook / Landecia** cloud plat
 - **Device Sound** — beep sounds on/off
 - **Mode** — operating mode select
 - **Countdown** — sleep timer select
-- **Cloud-push** — real-time state via MQTT; one shared connection per account
+- **Local-first control** — direct LAN connection when possible, cloud MQTT fallback otherwise; one shared cloud connection per account
 
 ## Requirements
 
-- A Landbook account with at least one paired device
+- A Landbook account with at least one device already paired **through the official Landbook app** — this integration connects to devices already on your account, it doesn't provision new ones onto your Wi-Fi, and a Landbook account is required even though control itself happens locally
 - Home Assistant 2024.1.0 or newer
 
 ## Setup
