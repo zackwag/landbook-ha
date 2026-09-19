@@ -16,7 +16,7 @@ from custom_components.landbook import (
     _make_local_state_handler,
     _make_send_command,
 )
-from custom_components.landbook.const import CONF_AUTH_KEY, DOMAIN
+from custom_components.landbook.const import CONF_AUTH_KEY, CONF_DEVICE_KEY, DOMAIN
 
 from .conftest import make_config_entry, make_hass, register_entry
 
@@ -388,6 +388,47 @@ class TestMqttCallbackLocalFirst:
 
         assert entry_data["state"]["power"] is True
         hass.loop.call_soon_threadsafe.assert_called_once()
+
+
+class TestRequestAllStates:
+    """The account-level reconnect handler (_request_all_states, wired as
+    mqtt_client._on_reconnect) re-seeds state over cloud MQTT for every
+    device on the account — except ones a live local-LAN connection is
+    already keeping fresh, which would otherwise get a pointless cloud
+    read that reliably fails its SENDACK on real hardware."""
+
+    @pytest.mark.asyncio
+    async def test_skips_local_connected_devices_but_reads_cloud_only_ones(self, mock_landbook_api):
+        from custom_components.landbook import async_setup, async_setup_entry
+
+        hass = make_hass()
+        api = mock_landbook_api
+        api.discover_devices.return_value = [
+            DiscoveredDevice(
+                product_key="pk1", device_key="dk1", ip="10.0.0.5", port=6607, version=1
+            )
+        ]
+
+        local_entry = make_config_entry(hass, entry_id="e_local", uid="u1")
+        local_entry.data[CONF_AUTH_KEY] = "dGVzdGtleQ=="
+        register_entry(hass, local_entry)
+
+        cloud_entry = make_config_entry(hass, entry_id="e_cloud", uid="u1")
+        cloud_entry.data[CONF_DEVICE_KEY] = "dk2"  # no authKey -> stays cloud-only
+        register_entry(hass, cloud_entry)
+
+        await async_setup(hass, {})
+        await async_setup_entry(hass, local_entry)
+        await async_setup_entry(hass, cloud_entry)
+
+        assert hass.data[DOMAIN]["e_local"]["local_client"] is api.local_client
+        assert hass.data[DOMAIN]["e_cloud"]["local_client"] is None
+
+        api.mqtt.send_read.reset_mock()
+        api.mqtt._on_reconnect()
+
+        called_device_ids = {c.args[0] for c in api.mqtt.send_read.call_args_list}
+        assert called_device_ids == {"qdpk1dk2"}
 
 
 class TestMakeLocalStateHandler:
