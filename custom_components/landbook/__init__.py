@@ -39,6 +39,7 @@ from .const import (
     CONF_REFRESH_TOKEN,
     CONF_REGION,
     CONF_SIGNAL_STRENGTH,
+    CONF_TSL_CACHE,
     CONF_UID,
     DISPLAY_LIGHT_HINTS,
     DOMAIN,
@@ -110,51 +111,63 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         bearer_token = stored.get("access") or entry.data.get(CONF_BEARER_TOKEN, bearer_token)
         refresh_tok = stored.get("refresh") or entry.data.get(CONF_REFRESH_TOKEN, refresh_tok)
 
-        try:
-            properties = await async_get_tsl(bearer_token, pk, region)
-        except LandbookAPIError as exc:
-            if "Token validation failed" not in str(exc):
-                raise ConfigEntryNotReady(f"Could not fetch TSL model: {exc}") from exc
-
-            if domain_data.get(reauth_fired_key):
-                raise ConfigEntryNotReady(
-                    f"Token invalid for {uid}, reauth already requested — will retry"
-                )
-
-            if not refresh_tok:
-                domain_data[reauth_fired_key] = True
-                entry.async_start_reauth(hass)
-                raise ConfigEntryNotReady(
-                    "Token expired and no refresh token on file (pre-upgrade entry) — reauth required"
-                )
+        # TSL rarely changes, so a cached copy (see CONF_TSL_CACHE) skips
+        # this REST call — and the token-refresh dance below that's only
+        # ever triggered by it — on every restart after the first. Remove
+        # and re-add the device to force a refresh if it ever does change.
+        cached_properties = entry.data.get(CONF_TSL_CACHE)
+        if cached_properties is not None:
+            properties = cached_properties
+        else:
             try:
-                bearer_token, refresh_tok = await async_refresh_token(
-                    bearer_token, refresh_tok, region
-                )
-                account_tokens[uid] = {"access": bearer_token, "refresh": refresh_tok}
-                for cfg_entry in hass.config_entries.async_entries(DOMAIN):
-                    if cfg_entry.data.get(CONF_UID) == uid:
-                        hass.config_entries.async_update_entry(
-                            cfg_entry,
-                            data={
-                                **cfg_entry.data,
-                                CONF_BEARER_TOKEN: bearer_token,
-                                CONF_REFRESH_TOKEN: refresh_tok,
-                            },
-                        )
                 properties = await async_get_tsl(bearer_token, pk, region)
-            except LandbookAuthError as auth_exc:
-                if not domain_data.get(reauth_fired_key):
+            except LandbookAPIError as exc:
+                if "Token validation failed" not in str(exc):
+                    raise ConfigEntryNotReady(f"Could not fetch TSL model: {exc}") from exc
+
+                if domain_data.get(reauth_fired_key):
+                    raise ConfigEntryNotReady(
+                        f"Token invalid for {uid}, reauth already requested — will retry"
+                    )
+
+                if not refresh_tok:
                     domain_data[reauth_fired_key] = True
-                    if "rejected" in str(auth_exc).lower():
-                        entry.async_start_reauth(hass)
-                raise ConfigEntryNotReady(
-                    f"Token expired and refresh failed: {auth_exc}"
-                ) from auth_exc
-            except LandbookAPIError as retry_exc:
-                raise ConfigEntryNotReady(
-                    f"Could not fetch TSL model after token refresh: {retry_exc}"
-                ) from retry_exc
+                    entry.async_start_reauth(hass)
+                    raise ConfigEntryNotReady(
+                        "Token expired and no refresh token on file (pre-upgrade entry) — reauth required"
+                    )
+                try:
+                    bearer_token, refresh_tok = await async_refresh_token(
+                        bearer_token, refresh_tok, region
+                    )
+                    account_tokens[uid] = {"access": bearer_token, "refresh": refresh_tok}
+                    for cfg_entry in hass.config_entries.async_entries(DOMAIN):
+                        if cfg_entry.data.get(CONF_UID) == uid:
+                            hass.config_entries.async_update_entry(
+                                cfg_entry,
+                                data={
+                                    **cfg_entry.data,
+                                    CONF_BEARER_TOKEN: bearer_token,
+                                    CONF_REFRESH_TOKEN: refresh_tok,
+                                },
+                            )
+                    properties = await async_get_tsl(bearer_token, pk, region)
+                except LandbookAuthError as auth_exc:
+                    if not domain_data.get(reauth_fired_key):
+                        domain_data[reauth_fired_key] = True
+                        if "rejected" in str(auth_exc).lower():
+                            entry.async_start_reauth(hass)
+                    raise ConfigEntryNotReady(
+                        f"Token expired and refresh failed: {auth_exc}"
+                    ) from auth_exc
+                except LandbookAPIError as retry_exc:
+                    raise ConfigEntryNotReady(
+                        f"Could not fetch TSL model after token refresh: {retry_exc}"
+                    ) from retry_exc
+
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, CONF_TSL_CACHE: properties}
+            )
 
     power_prop = _find_power_prop(properties)
     speed_prop = _find_speed_prop(properties, power_prop)
@@ -454,46 +467,63 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # already connected to.
         mqtt_client.send_read(device_id, pk, dk, [p["code"] for p in properties])
 
-    # Also seed initial state from REST API as a fallback
-    try:
-        attrs = await async_get_device_attributes(bearer_token, pk, dk, region)
-        _LOGGER.debug("getDeviceBusinessAttributes raw response for %s: %s", dk, attrs)
+    # Also seed initial state from REST API as a fallback — but only if
+    # local control doesn't already cover every property the device has
+    # (temperature included). When it does, this call is pure overhead:
+    # local already reports everything within about a second of connecting
+    # (see PR #49), so there's nothing left for cloud to seed. The one
+    # thing this call also does — refreshing CONF_FW_VERSION for the
+    # Device info panel — stops updating in that case too; that's cosmetic
+    # only (not read by any functional code path) and acceptable in
+    # exchange for skipping a REST call every single restart.
+    needed_codes = {p["code"] for p in properties}
+    if temperature_prop and temperature_prop.get("synthetic"):
+        needed_codes.add("temperature")
+    local_codes = hass.data[DOMAIN][entry.entry_id].get("local_codes") or set()
+    if local_client is None or not needed_codes <= local_codes:
+        try:
+            attrs = await async_get_device_attributes(bearer_token, pk, dk, region)
+            _LOGGER.debug("getDeviceBusinessAttributes raw response for %s: %s", dk, attrs)
 
-        # Extract firmware version from deviceData and persist to entry
-        device_data = (attrs if isinstance(attrs, dict) else {}).get("deviceData") or {}
-        fw_version = device_data.get("version")
-        if fw_version and entry.data.get(CONF_FW_VERSION) != fw_version:
-            hass.config_entries.async_update_entry(
-                entry, data={**entry.data, CONF_FW_VERSION: fw_version}
+            # Extract firmware version from deviceData and persist to entry
+            device_data = (attrs if isinstance(attrs, dict) else {}).get("deviceData") or {}
+            fw_version = device_data.get("version")
+            if fw_version and entry.data.get(CONF_FW_VERSION) != fw_version:
+                hass.config_entries.async_update_entry(
+                    entry, data={**entry.data, CONF_FW_VERSION: fw_version}
+                )
+
+            # Seed property state from customizeTslInfo list, coercing string values
+            # to native types so entity handlers see the same types as MQTT bus_ messages
+            prop_types = {p["code"]: p["dataType"] for p in properties}
+            tsl_info = (attrs if isinstance(attrs, dict) else {}).get("customizeTslInfo") or attrs
+            initial_state: dict = {}
+            if isinstance(tsl_info, list):
+                for item in tsl_info:
+                    code = item.get("resourceCode") or item.get("code")
+                    val = item.get("resourceValce") or item.get("value")
+                    if code is not None:
+                        initial_state[code] = _coerce_value(val, prop_types.get(code))
+            elif isinstance(tsl_info, dict):
+                initial_state = tsl_info
+            _LOGGER.debug("Initial state seeded for %s: %s", dk, initial_state)
+            # Merge rather than replace, and skip codes local control already
+            # covers (entry_data["local_codes"]) — this REST snapshot can be
+            # stale for a device that's mostly quiet on cloud in favor of local
+            # (see PR #47's temperature fix for the same class of issue), and
+            # replacing outright could stomp a correct value local already
+            # pushed (or is about to) with a stale cloud one, e.g. showing a
+            # fan that's actually on as off after a restart.
+            hass.data[DOMAIN][entry.entry_id]["state"].update(
+                {code: value for code, value in initial_state.items() if code not in local_codes}
             )
-
-        # Seed property state from customizeTslInfo list, coercing string values
-        # to native types so entity handlers see the same types as MQTT bus_ messages
-        prop_types = {p["code"]: p["dataType"] for p in properties}
-        tsl_info = (attrs if isinstance(attrs, dict) else {}).get("customizeTslInfo") or attrs
-        initial_state: dict = {}
-        if isinstance(tsl_info, list):
-            for item in tsl_info:
-                code = item.get("resourceCode") or item.get("code")
-                val = item.get("resourceValce") or item.get("value")
-                if code is not None:
-                    initial_state[code] = _coerce_value(val, prop_types.get(code))
-        elif isinstance(tsl_info, dict):
-            initial_state = tsl_info
-        _LOGGER.debug("Initial state seeded for %s: %s", dk, initial_state)
-        # Merge rather than replace, and skip codes local control already
-        # covers (entry_data["local_codes"]) — this REST snapshot can be
-        # stale for a device that's mostly quiet on cloud in favor of local
-        # (see PR #47's temperature fix for the same class of issue), and
-        # replacing outright could stomp a correct value local already
-        # pushed (or is about to) with a stale cloud one, e.g. showing a
-        # fan that's actually on as off after a restart.
-        local_codes = hass.data[DOMAIN][entry.entry_id].get("local_codes") or set()
-        hass.data[DOMAIN][entry.entry_id]["state"].update(
-            {code: value for code, value in initial_state.items() if code not in local_codes}
+        except LandbookAPIError as exc:
+            _LOGGER.warning("Could not fetch initial device attributes for %s: %s", dk, exc)
+    else:
+        _LOGGER.debug(
+            "Landbook: skipping REST state seed for %s — local control covers every property",
+            dk,
         )
-    except LandbookAPIError as exc:
-        _LOGGER.warning("Could not fetch initial device attributes for %s: %s", dk, exc)
 
     # Start signal strength polling if the option is enabled
     _setup_signal_polling(hass, entry, bearer_token, pk, dk, region)

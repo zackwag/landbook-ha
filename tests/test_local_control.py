@@ -528,6 +528,66 @@ class TestSetupEntryLocalControl:
         api.local_client.on_update([TTLVField(21, TYPE_NUMBER, 78)])
         assert entry_data["state"]["temperature"] == 78
 
+    @pytest.mark.asyncio
+    async def test_rest_state_seed_skipped_when_local_covers_everything(self, mock_landbook_api):
+        """Once local control covers every property a device has — power
+        plus the confirmed local temperature id on p11vkW — the REST
+        device-attributes call is pure overhead and should be skipped."""
+        from custom_components.landbook import async_setup, async_setup_entry
+
+        hass = make_hass()
+        api = mock_landbook_api
+        api.discover_devices.return_value = [
+            DiscoveredDevice(
+                product_key="p11vkW", device_key="dk1", ip="10.0.0.5", port=6607, version=1
+            )
+        ]
+        api.async_get_tsl.return_value = [
+            {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL", "sort": 0, "specs": []},
+        ]
+
+        entry = make_config_entry(hass, entry_id="e1", uid="u1")
+        entry.data[CONF_PRODUCT_KEY] = "p11vkW"
+        entry.data[CONF_AUTH_KEY] = "dGVzdGtleQ=="
+        register_entry(hass, entry)
+
+        await async_setup(hass, {})
+        await async_setup_entry(hass, entry)
+
+        assert hass.data[DOMAIN]["e1"]["local_client"] is api.local_client  # sanity check
+        api.async_get_device_attributes.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_rest_state_seed_still_sent_when_local_missing_a_property(
+        self, mock_landbook_api
+    ):
+        """Same product, but one TSL property has no local id — local
+        control can't cover it, so the REST seed must still run."""
+        from custom_components.landbook import async_setup, async_setup_entry
+
+        hass = make_hass()
+        api = mock_landbook_api
+        api.discover_devices.return_value = [
+            DiscoveredDevice(
+                product_key="p11vkW", device_key="dk1", ip="10.0.0.5", port=6607, version=1
+            )
+        ]
+        api.async_get_tsl.return_value = [
+            {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL", "sort": 0, "specs": []},
+            {"code": "extra_no_id", "name": "Extra", "dataType": "BOOL", "sort": 99, "specs": []},
+        ]
+
+        entry = make_config_entry(hass, entry_id="e1", uid="u1")
+        entry.data[CONF_PRODUCT_KEY] = "p11vkW"
+        entry.data[CONF_AUTH_KEY] = "dGVzdGtleQ=="
+        register_entry(hass, entry)
+
+        await async_setup(hass, {})
+        await async_setup_entry(hass, entry)
+
+        assert hass.data[DOMAIN]["e1"]["local_client"] is api.local_client  # sanity check
+        api.async_get_device_attributes.assert_called_once()
+
 
 class TestMqttCallbackLocalFirst:
     """bus_ (cloud state report) handling inside _mqtt_callback, wired up
