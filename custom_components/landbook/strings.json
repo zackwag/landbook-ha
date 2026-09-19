@@ -12,7 +12,11 @@
       "pick_device": {
         "title": "Select Device",
         "data": {
-          "device": "Device"
+          "device": "Device",
+          "local_control_enabled": "Enable local control"
+        },
+        "data_description": {
+          "local_control_enabled": "Control this device directly over your local network instead of the cloud, when possible. Applies to every device on this account, not just this one — defaults to whatever the account is already set to."
         }
       },
       "reauth_confirm": {
@@ -40,12 +44,14 @@
         "data": {
           "temperature_unit": "Temperature unit",
           "signal_strength_enabled": "Show Wi-Fi signal strength sensor",
-          "mqtt_watchdog_enabled": "Auto-reconnect MQTT if stalled"
+          "mqtt_watchdog_enabled": "Auto-reconnect MQTT if stalled",
+          "local_control_enabled": "Enable local control"
         },
         "data_description": {
           "temperature_unit": "The device always reports temperature in °F. Selecting °C converts the value for display.",
           "signal_strength_enabled": "Adds a Wi-Fi signal strength sensor (dBm). Requires a REST API call every 5 minutes — enable only if you need it.",
-          "mqtt_watchdog_enabled": "If no MQTT message arrives for 5 minutes, force a reconnect. Fixes silent connection drops that the broker never reports."
+          "mqtt_watchdog_enabled": "If no MQTT message arrives for 5 minutes, force a reconnect. Fixes silent connection drops that the broker never reports.",
+          "local_control_enabled": "Control devices directly over your local network instead of the cloud, when possible. Applies to every device on this account at once."
         }
       }
     }

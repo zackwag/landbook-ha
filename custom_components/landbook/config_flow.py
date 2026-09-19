@@ -241,13 +241,16 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_PRODUCT_KEY: device["productKey"],
                         CONF_DEVICE_NAME: device["deviceName"],
                         CONF_PRODUCT_NAME: device.get("productName", ""),
-                        # Required for local-LAN control login — not used at
-                        # all unless CONF_LOCAL_CONTROL_ENABLED is also on.
+                        # Always stored, regardless of the local-control
+                        # answer below — so turning it on later (via
+                        # Options) never requires removing and re-adding
+                        # the device just to pick up the key.
                         CONF_AUTH_KEY: device.get("authKey", ""),
-                        # Account-wide setting — a newly-added fan should
-                        # start in whatever state the rest of the account is
-                        # already in, not silently default back to off.
-                        CONF_LOCAL_CONTROL_ENABLED: self._account_local_control_enabled(),
+                        # Offered here so a new device doesn't need a trip
+                        # to Options just to turn this on; still defaults
+                        # to the account's current setting so it stays
+                        # grouped unless the user overrides it here.
+                        CONF_LOCAL_CONTROL_ENABLED: user_input[CONF_LOCAL_CONTROL_ENABLED],
                     },
                 )
 
@@ -258,6 +261,9 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required("device"): vol.In(device_names),
+                    vol.Required(
+                        CONF_LOCAL_CONTROL_ENABLED, default=self._account_local_control_enabled()
+                    ): bool,
                 }
             ),
             errors=errors,

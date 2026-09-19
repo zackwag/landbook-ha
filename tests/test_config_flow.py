@@ -124,23 +124,37 @@ class TestUserStep:
 # ---------------------------------------------------------------------------
 
 
+def _schema_default(schema, key_name):
+    """Extract a voluptuous field's default value by name — every Required/
+    Optional marker has a `.default` attribute, but it's only callable when
+    an actual default was given (otherwise it's voluptuous's UNDEFINED
+    sentinel), so this only calls it for the one key we're looking for."""
+    key = next(k for k in schema.schema if str(k) == key_name)
+    return key.default()
+
+
 class TestPickDeviceStep:
-    @pytest.mark.asyncio
-    async def test_pick_device_creates_entry(self):
+    def _make_flow(self, hass_entries=(), **overrides):
         flow = LandbookFanConfigFlow()
         flow.hass = MagicMock()
-        flow.hass.config_entries.async_entries = MagicMock(return_value=[])
-        flow._email = "a@b.com"
-        flow._bearer_token = "tok"
-        flow._refresh_token = "ref"
-        flow._uid = "uid1"
-        flow._region = "us"
-        flow._devices = MOCK_DEVICES
-
+        flow.hass.config_entries.async_entries = MagicMock(return_value=list(hass_entries))
+        flow._email = overrides.get("email", "a@b.com")
+        flow._bearer_token = overrides.get("bearer_token", "tok")
+        flow._refresh_token = overrides.get("refresh_token", "ref")
+        flow._uid = overrides.get("uid", "uid1")
+        flow._region = overrides.get("region", "us")
+        flow._devices = overrides.get("devices", MOCK_DEVICES)
         flow.async_set_unique_id = AsyncMock()
         flow._abort_if_unique_id_configured = MagicMock()
+        return flow
 
-        result = await flow.async_step_pick_device({"device": "Living Room Fan"})
+    @pytest.mark.asyncio
+    async def test_pick_device_creates_entry(self):
+        flow = self._make_flow()
+
+        result = await flow.async_step_pick_device(
+            {"device": "Living Room Fan", CONF_LOCAL_CONTROL_ENABLED: False}
+        )
 
         assert result["type"] == "create_entry"
         assert result["title"] == "Living Room Fan"
@@ -149,92 +163,89 @@ class TestPickDeviceStep:
         assert result["data"][CONF_BEARER_TOKEN] == "tok"
         assert result["data"][CONF_REFRESH_TOKEN] == "ref"
         assert result["data"][CONF_AUTH_KEY] == "dGVzdGtleQ=="
-        # No siblings on the account yet -> defaults to off.
         assert result["data"][CONF_LOCAL_CONTROL_ENABLED] is False
 
     @pytest.mark.asyncio
     async def test_pick_device_missing_auth_key_defaults_empty(self):
-        flow = LandbookFanConfigFlow()
-        flow.hass = MagicMock()
-        flow.hass.config_entries.async_entries = MagicMock(return_value=[])
-        flow._email = "a@b.com"
-        flow._bearer_token = "tok"
-        flow._refresh_token = "ref"
-        flow._uid = "uid1"
-        flow._region = "us"
-        flow._devices = MOCK_DEVICES
+        flow = self._make_flow()
 
-        flow.async_set_unique_id = AsyncMock()
-        flow._abort_if_unique_id_configured = MagicMock()
-
-        result = await flow.async_step_pick_device({"device": "Bedroom Fan"})
+        result = await flow.async_step_pick_device(
+            {"device": "Bedroom Fan", CONF_LOCAL_CONTROL_ENABLED: False}
+        )
 
         assert result["data"][CONF_AUTH_KEY] == ""
 
     @pytest.mark.asyncio
-    async def test_pick_device_inherits_account_local_control_setting(self):
-        sibling = MagicMock()
-        sibling.data = {CONF_UID: "uid1"}
-        sibling.options = {CONF_LOCAL_CONTROL_ENABLED: True}
+    async def test_auth_key_stored_even_when_local_control_declined(self):
+        """The exact regression this guards against: turning local control
+        off during setup must never skip storing the authKey needed to turn
+        it on later without removing and re-adding the device."""
+        flow = self._make_flow()
 
-        flow = LandbookFanConfigFlow()
-        flow.hass = MagicMock()
-        flow.hass.config_entries.async_entries = MagicMock(return_value=[sibling])
-        flow._email = "a@b.com"
-        flow._bearer_token = "tok"
-        flow._refresh_token = "ref"
-        flow._uid = "uid1"
-        flow._region = "us"
-        flow._devices = MOCK_DEVICES
+        result = await flow.async_step_pick_device(
+            {"device": "Living Room Fan", CONF_LOCAL_CONTROL_ENABLED: False}
+        )
 
-        flow.async_set_unique_id = AsyncMock()
-        flow._abort_if_unique_id_configured = MagicMock()
+        assert result["data"][CONF_LOCAL_CONTROL_ENABLED] is False
+        assert result["data"][CONF_AUTH_KEY] == "dGVzdGtleQ=="
 
-        result = await flow.async_step_pick_device({"device": "Bedroom Fan"})
+    @pytest.mark.asyncio
+    async def test_user_can_enable_local_control_during_setup(self):
+        """No sibling entries (so the account default would be off), but
+        the user explicitly checks the box on this device's own setup."""
+        flow = self._make_flow(hass_entries=[])
+
+        result = await flow.async_step_pick_device(
+            {"device": "Living Room Fan", CONF_LOCAL_CONTROL_ENABLED: True}
+        )
 
         assert result["data"][CONF_LOCAL_CONTROL_ENABLED] is True
 
     @pytest.mark.asyncio
-    async def test_pick_device_ignores_other_accounts_local_control_setting(self):
+    async def test_form_default_inherits_account_setting(self):
+        sibling = MagicMock()
+        sibling.data = {CONF_UID: "uid1"}
+        sibling.options = {CONF_LOCAL_CONTROL_ENABLED: True}
+        flow = self._make_flow(hass_entries=[sibling])
+
+        result = await flow.async_step_pick_device(None)
+
+        assert result["type"] == "form"
+        assert _schema_default(result["data_schema"], CONF_LOCAL_CONTROL_ENABLED) is True
+
+    @pytest.mark.asyncio
+    async def test_form_default_off_with_no_siblings(self):
+        flow = self._make_flow(hass_entries=[])
+
+        result = await flow.async_step_pick_device(None)
+
+        assert _schema_default(result["data_schema"], CONF_LOCAL_CONTROL_ENABLED) is False
+
+    @pytest.mark.asyncio
+    async def test_form_default_ignores_other_accounts(self):
         other_account = MagicMock()
         other_account.data = {CONF_UID: "some_other_uid"}
         other_account.options = {CONF_LOCAL_CONTROL_ENABLED: True}
+        flow = self._make_flow(hass_entries=[other_account])
 
-        flow = LandbookFanConfigFlow()
-        flow.hass = MagicMock()
-        flow.hass.config_entries.async_entries = MagicMock(return_value=[other_account])
-        flow._email = "a@b.com"
-        flow._bearer_token = "tok"
-        flow._refresh_token = "ref"
-        flow._uid = "uid1"
-        flow._region = "us"
-        flow._devices = MOCK_DEVICES
+        result = await flow.async_step_pick_device(None)
 
-        flow.async_set_unique_id = AsyncMock()
-        flow._abort_if_unique_id_configured = MagicMock()
-
-        result = await flow.async_step_pick_device({"device": "Living Room Fan"})
-
-        assert result["data"][CONF_LOCAL_CONTROL_ENABLED] is False
+        assert _schema_default(result["data_schema"], CONF_LOCAL_CONTROL_ENABLED) is False
 
     @pytest.mark.asyncio
     async def test_pick_device_not_found_shows_error(self):
-        flow = LandbookFanConfigFlow()
-        flow.hass = MagicMock()
-        flow._devices = MOCK_DEVICES
+        flow = self._make_flow(hass_entries=[])
 
-        result = await flow.async_step_pick_device({"device": "Nonexistent Fan"})
+        result = await flow.async_step_pick_device(
+            {"device": "Nonexistent Fan", CONF_LOCAL_CONTROL_ENABLED: False}
+        )
 
         assert result["type"] == "form"
         assert result["errors"]["base"] == "device_not_found"
 
     @pytest.mark.asyncio
     async def test_pick_device_fetch_failure_shows_error(self):
-        flow = LandbookFanConfigFlow()
-        flow.hass = MagicMock()
-        flow._bearer_token = "tok"
-        flow._region = "us"
-        flow._devices = []
+        flow = self._make_flow(hass_entries=[], devices=[])
 
         with patch(
             "custom_components.landbook.config_flow.async_get_device_list",
