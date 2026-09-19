@@ -21,6 +21,7 @@ from landbook_api import (
     LandbookAuthError,
     LandbookMQTTClient,
     async_get_device_attributes,
+    async_get_device_list,
     async_get_tsl,
     async_refresh_token,
     refresh_token,
@@ -303,7 +304,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # cloud MQTT's own reliability problems (#27), attempting local
     # unconditionally is strictly safer than requiring someone to
     # discover and flip a setting to get it.
-    local_client = await _connect_local_client(hass, entry, accounts, client_lock, uid, pk, dk)
+    local_client = await _connect_local_client(
+        hass, entry, accounts, client_lock, uid, pk, dk, bearer_token, region
+    )
     if local_client is not None:
         accounts[uid]["local_clients"][entry.entry_id] = local_client
 
@@ -465,6 +468,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+async def _backfill_auth_key(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    bearer_token: str,
+    region: str,
+    pk: str,
+    dk: str,
+) -> str | None:
+    """Fetch and persist the authKey for an entry that predates it being
+    stored unconditionally at setup (#41). The device list is the only
+    place Landbook's API ever returns it — there's no way to look up a
+    single already-paired device's authKey directly — so existing users
+    would otherwise need to remove and re-add the device just to pick one
+    up. Best-effort: any failure here just means local control stays
+    unavailable for this device, same as if it had no authKey at all.
+    """
+    try:
+        devices = await async_get_device_list(bearer_token, region)
+    except Exception as exc:  # noqa: BLE001 - best-effort, must not break setup
+        _LOGGER.debug("Landbook: authKey backfill fetch failed for %s: %s", dk, exc)
+        return None
+
+    device = next(
+        (d for d in devices if d.get("productKey") == pk and d.get("deviceKey") == dk),
+        None,
+    )
+    auth_key = (device or {}).get("authKey")
+    if not auth_key:
+        return None
+
+    hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_AUTH_KEY: auth_key})
+    _LOGGER.info("Landbook: backfilled authKey for %s — local control now available", dk)
+    return auth_key
+
+
 async def _connect_local_client(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -473,6 +511,8 @@ async def _connect_local_client(
     uid: str,
     pk: str,
     dk: str,
+    bearer_token: str,
+    region: str,
 ) -> LandbookLocalClient | None:
     """Best-effort attempt to establish local-LAN control for one device.
 
@@ -483,12 +523,14 @@ async def _connect_local_client(
     """
     auth_key = entry.data.get(CONF_AUTH_KEY)
     if not auth_key:
-        _LOGGER.warning(
-            "Landbook: no authKey on file for %s "
-            "(remove and re-add the device to pick one up) — using cloud MQTT",
-            dk,
-        )
-        return None
+        auth_key = await _backfill_auth_key(hass, entry, bearer_token, region, pk, dk)
+        if not auth_key:
+            _LOGGER.warning(
+                "Landbook: no authKey on file for %s and none found via device list "
+                "— using cloud MQTT",
+                dk,
+            )
+            return None
 
     # Discovery is a broadcast + listen, shared once per account rather than
     # repeated per device — see the "local_devices" cache comment where

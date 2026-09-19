@@ -21,6 +21,9 @@ def mock_landbook_api():
         patch(
             "custom_components.landbook.async_get_device_attributes", new_callable=AsyncMock
         ) as mock_attrs,
+        patch(
+            "custom_components.landbook.async_get_device_list", new_callable=AsyncMock
+        ) as mock_device_list,
         patch("custom_components.landbook.LandbookMQTTClient") as mock_mqtt_cls,
         patch("custom_components.landbook.discover_devices") as mock_discover,
         patch("custom_components.landbook.LandbookLocalClient") as mock_local_cls,
@@ -61,11 +64,17 @@ def mock_landbook_api():
         ]
         mock_attrs.return_value = {"customizeTslInfo": [], "deviceData": {}}
 
+        # Default: empty device list, so an entry with no authKey on file
+        # stays that way (backfill finds nothing) unless a test arranges a
+        # matching device explicitly.
+        mock_device_list.return_value = []
+
         yield SimpleNamespace(
             async_get_tsl=mock_tsl,
             async_refresh_token=mock_async_refresh,
             refresh_token=mock_sync_refresh,
             async_get_device_attributes=mock_attrs,
+            async_get_device_list=mock_device_list,
             mqtt_cls=mock_mqtt_cls,
             mqtt=mock_mqtt,
             discover_devices=mock_discover,
