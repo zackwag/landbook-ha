@@ -1,5 +1,5 @@
-"""Tests for local-LAN control wiring: _connect_local_client and
-_make_send_command in __init__.py.
+"""Tests for local-LAN control wiring: _connect_local_client,
+_make_send_command, and _make_local_state_handler in __init__.py.
 """
 
 from __future__ import annotations
@@ -9,9 +9,13 @@ from unittest.mock import MagicMock
 
 import pytest
 from landbook_api.local_client import DiscoveredDevice
-from landbook_api.local_protocol import TYPE_BOOL_TRUE, TYPE_NUMBER
+from landbook_api.local_protocol import TYPE_BOOL_TRUE, TYPE_BYTES, TYPE_NUMBER, TTLVField
 
-from custom_components.landbook import _connect_local_client, _make_send_command
+from custom_components.landbook import (
+    _connect_local_client,
+    _make_local_state_handler,
+    _make_send_command,
+)
 from custom_components.landbook.const import CONF_AUTH_KEY, DOMAIN
 
 from .conftest import make_config_entry, make_hass, register_entry
@@ -265,3 +269,98 @@ class TestSetupEntryWithLocalControlEnabled:
 
         entry_data["send_command"]({"power": True})
         api.mqtt.send_write.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_update_wired_and_initial_read_sent(self, mock_landbook_api):
+        from custom_components.landbook import async_setup, async_setup_entry
+
+        hass = make_hass()
+        api = mock_landbook_api
+        api.discover_devices.return_value = [
+            DiscoveredDevice(
+                product_key="pk1", device_key="dk1", ip="10.0.0.5", port=6607, version=1
+            )
+        ]
+        api.async_get_tsl.return_value = [
+            {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL", "sort": 0, "specs": []},
+        ]
+
+        entry = make_config_entry(hass, entry_id="e1", uid="u1")
+        entry.data[CONF_AUTH_KEY] = "dGVzdGtleQ=="
+        entry.data["local_control_enabled"] = True
+        register_entry(hass, entry)
+
+        await async_setup(hass, {})
+        await async_setup_entry(hass, entry)
+
+        # Best-effort initial read, matching the protocol (see module note:
+        # this is a nudge, not load-bearing — devices self-report anyway).
+        api.local_client.read.assert_called_once_with([1])
+
+        # on_update wired so a device push actually updates HA state,
+        # through the same state dict / event mechanism cloud MQTT uses.
+        assert callable(api.local_client.on_update)
+        api.local_client.on_update([TTLVField(1, TYPE_BOOL_TRUE, True)])
+
+        entry_data = hass.data[DOMAIN]["e1"]
+        assert entry_data["state"]["power"] is True
+
+    @pytest.mark.asyncio
+    async def test_disabled_local_control_never_sets_on_update(self, mock_landbook_api):
+        from custom_components.landbook import async_setup, async_setup_entry
+
+        hass = make_hass()
+        api = mock_landbook_api
+
+        entry = make_config_entry(hass, entry_id="e1", uid="u1")
+        register_entry(hass, entry)
+
+        await async_setup(hass, {})
+        await async_setup_entry(hass, entry)
+
+        # local control never activated for this entry, so the local
+        # client mock (which only gets touched inside the `if local_client
+        # is not None` block) should never have been used at all.
+        api.local_client.read.assert_not_called()
+        assert hass.data[DOMAIN]["e1"]["local_client"] is None
+
+
+class TestMakeLocalStateHandler:
+    def test_updates_state_dict_and_schedules_event(self):
+        hass = make_hass()
+        entry_data = {"state": {}}
+        hass.data[DOMAIN] = {"e1": entry_data}
+
+        handler = _make_local_state_handler(hass, "e1", {1: "power", 3: "speed"})
+        handler([TTLVField(1, TYPE_BOOL_TRUE, True), TTLVField(3, TYPE_NUMBER, 5)])
+
+        assert entry_data["state"] == {"power": True, "speed": 5}
+        hass.loop.call_soon_threadsafe.assert_called_once()
+
+    def test_decodes_bytes_field_to_str(self):
+        hass = make_hass()
+        entry_data = {"state": {}}
+        hass.data[DOMAIN] = {"e1": entry_data}
+
+        handler = _make_local_state_handler(hass, "e1", {6: "some_text_prop"})
+        handler([TTLVField(6, TYPE_BYTES, b"hello")])
+
+        assert entry_data["state"]["some_text_prop"] == "hello"
+
+    def test_unknown_field_id_ignored(self):
+        hass = make_hass()
+        entry_data = {"state": {}}
+        hass.data[DOMAIN] = {"e1": entry_data}
+
+        handler = _make_local_state_handler(hass, "e1", {1: "power"})
+        handler([TTLVField(99, TYPE_NUMBER, 5)])
+
+        assert entry_data["state"] == {}
+        hass.loop.call_soon_threadsafe.assert_not_called()
+
+    def test_missing_entry_data_is_a_noop(self):
+        hass = make_hass()
+        hass.data[DOMAIN] = {}
+
+        handler = _make_local_state_handler(hass, "missing", {1: "power"})
+        handler([TTLVField(1, TYPE_BOOL_TRUE, True)])  # must not raise

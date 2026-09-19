@@ -26,7 +26,7 @@ from landbook_api import (
     refresh_token,
 )
 from landbook_api.local_client import LandbookLocalClient, discover_devices
-from landbook_api.local_protocol import field_for_property
+from landbook_api.local_protocol import TYPE_BYTES, field_for_property
 
 from .const import (
     CONF_AUTH_KEY,
@@ -328,6 +328,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
     domain_data[entry.entry_id]["send_command"] = _make_send_command(hass, entry.entry_id)
 
+    if local_client is not None:
+        id_to_code = {p["id"]: p["code"] for p in properties if "id" in p}
+        local_client.on_update = _make_local_state_handler(hass, entry.entry_id, id_to_code)
+        # Best-effort nudge — on real hardware tested so far, a device
+        # pushes its own properties continuously regardless of whether this
+        # is called, so this mostly just matches the protocol rather than
+        # being load-bearing. Never block/fail setup over it.
+        try:
+            local_client.read(list(id_to_code.keys()))
+        except Exception as exc:  # noqa: BLE001 - best-effort, device still self-reports
+            _LOGGER.debug("Landbook: initial local read for %s failed: %s", dk, exc)
+
     def _mqtt_callback(suffix: str, payload: Any) -> None:
         entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
         if entry_data is None:
@@ -535,6 +547,46 @@ def _make_send_command(hass: HomeAssistant, entry_id: str):
         )
 
     return _send_command
+
+
+def _make_local_state_handler(hass: HomeAssistant, entry_id: str, id_to_code: dict[int, str]):
+    """Build the callback wired to LandbookLocalClient.on_update.
+
+    Merges incoming property pushes into the same shared state dict and
+    fires the same HA event that cloud MQTT's bus_ handler already
+    feeds — so entities need no changes to benefit from this. Cloud MQTT
+    keeps updating that same dict independently and unconditionally;
+    local pushes are additive/redundant, not a replacement, so losing the
+    local connection (it has no auto-reconnect of its own yet) never loses
+    state tracking, just the faster/redundant local channel.
+
+    Called from LandbookLocalClient's background receive thread, like
+    paho's MQTT callback — must marshal back onto the event loop via
+    call_soon_threadsafe, same as _mqtt_callback below.
+    """
+
+    def _on_local_update(fields: list) -> None:
+        entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
+        if entry_data is None:
+            return
+        changed: set[str] = set()
+        for f in fields:
+            code = id_to_code.get(f.id)
+            if code is None:
+                continue
+            value = f.value
+            if f.type == TYPE_BYTES and isinstance(value, (bytes, bytearray)):
+                # Match cloud MQTT's string representation for TEXT properties.
+                value = value.decode("utf-8", errors="replace")
+            entry_data["state"][code] = value
+            changed.add(code)
+        if changed:
+            hass.loop.call_soon_threadsafe(
+                hass.async_create_task,
+                _async_update_entities(hass, entry_id, changed),
+            )
+
+    return _on_local_update
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
