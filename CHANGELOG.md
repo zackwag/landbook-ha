@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.0.0](https://github.com/zackwag/landbook-ha/compare/v1.5.0...v2.0.0) (2026-09-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* always attempt local-LAN control and make it authoritative for reads ([#42](https://github.com/zackwag/landbook-ha/issues/42))
+
+### Features
+
+* add opt-in local control option, grouped account-wide ([#37](https://github.com/zackwag/landbook-ha/issues/37)) ([246842d](https://github.com/zackwag/landbook-ha/commit/246842df4790ee812cd6e745c29699777586907e))
+* always attempt local-LAN control and make it authoritative for reads ([#42](https://github.com/zackwag/landbook-ha/issues/42)) ([de9ae22](https://github.com/zackwag/landbook-ha/commit/de9ae222f9181f6263b5e920165b168ef2a470c6))
+* backfill authKey from the device list for existing entries ([#46](https://github.com/zackwag/landbook-ha/issues/46)) ([a7f8255](https://github.com/zackwag/landbook-ha/commit/a7f8255697d2b435c7c66222e880d99fdc8300c4))
+* feed local device pushes into state too, not just writes ([#40](https://github.com/zackwag/landbook-ha/issues/40)) ([ac0385b](https://github.com/zackwag/landbook-ha/commit/ac0385b059130aa26e56eb7a1d06b5c9ad0d945e))
+* offer local control during setup, not just in Options ([#41](https://github.com/zackwag/landbook-ha/issues/41)) ([a53264c](https://github.com/zackwag/landbook-ha/commit/a53264c7197b5ed2e701264e4b4501808e185f1e))
+* wire local-LAN control into the write path ([#39](https://github.com/zackwag/landbook-ha/issues/39)) ([1d2579e](https://github.com/zackwag/landbook-ha/commit/1d2579e349148a1f82bddac4196548bb5b775530))
+
+
+### Bug Fixes
+
+* skip cloud re-seed reads for devices with a live local connection ([#44](https://github.com/zackwag/landbook-ha/issues/44)) ([0450945](https://github.com/zackwag/landbook-ha/commit/0450945795b59cec9fea70c8280a53298d341066))
+* update stale opt-in wording in local-control log messages ([#43](https://github.com/zackwag/landbook-ha/issues/43)) ([c6fa694](https://github.com/zackwag/landbook-ha/commit/c6fa694530b1fb9d59601c6e1558dafc9bff052e))
+
 ## [1.5.0](https://github.com/zackwag/landbook-ha/compare/v1.4.1...v1.5.0) (2026-09-18)
 
 
