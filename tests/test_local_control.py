@@ -36,10 +36,73 @@ class TestConnectLocalClient:
         accounts = {"u1": _account()}
         lock = asyncio.Lock()
 
-        result = await _connect_local_client(hass, entry, accounts, lock, "u1", "pk1", "dk1")
+        result = await _connect_local_client(
+            hass, entry, accounts, lock, "u1", "pk1", "dk1", "tok", "us"
+        )
 
         assert result is None
         mock_landbook_api.discover_devices.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_missing_auth_key_backfills_from_device_list_and_connects(
+        self, mock_landbook_api
+    ):
+        """The exact regression this guards against: an entry created
+        before authKey was stored unconditionally (#41) must not require
+        removing and re-adding the device just to unlock local control —
+        the device list has the authKey, so fetch and persist it there."""
+        hass = make_hass()
+        entry = make_config_entry(hass)  # no CONF_AUTH_KEY in data
+        accounts = {"u1": _account()}
+        lock = asyncio.Lock()
+        mock_landbook_api.async_get_device_list.return_value = [
+            {"productKey": "pk1", "deviceKey": "dk1", "authKey": "dGVzdGtleQ=="}
+        ]
+        mock_landbook_api.discover_devices.return_value = [
+            DiscoveredDevice(
+                product_key="pk1", device_key="dk1", ip="10.0.0.5", port=6607, version=1
+            )
+        ]
+
+        result = await _connect_local_client(
+            hass, entry, accounts, lock, "u1", "pk1", "dk1", "tok", "us"
+        )
+
+        assert result is mock_landbook_api.local_client
+        mock_landbook_api.async_get_device_list.assert_called_once_with("tok", "us")
+        assert entry.data[CONF_AUTH_KEY] == "dGVzdGtleQ=="
+
+    @pytest.mark.asyncio
+    async def test_backfill_finds_no_matching_device_falls_back(self, mock_landbook_api):
+        hass = make_hass()
+        entry = make_config_entry(hass)  # no CONF_AUTH_KEY in data
+        accounts = {"u1": _account()}
+        lock = asyncio.Lock()
+        mock_landbook_api.async_get_device_list.return_value = [
+            {"productKey": "pk_other", "deviceKey": "dk_other", "authKey": "irrelevant"}
+        ]
+
+        result = await _connect_local_client(
+            hass, entry, accounts, lock, "u1", "pk1", "dk1", "tok", "us"
+        )
+
+        assert result is None
+        assert CONF_AUTH_KEY not in entry.data
+        mock_landbook_api.discover_devices.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_backfill_fetch_failure_falls_back(self, mock_landbook_api):
+        hass = make_hass()
+        entry = make_config_entry(hass)  # no CONF_AUTH_KEY in data
+        accounts = {"u1": _account()}
+        lock = asyncio.Lock()
+        mock_landbook_api.async_get_device_list.side_effect = RuntimeError("network error")
+
+        result = await _connect_local_client(
+            hass, entry, accounts, lock, "u1", "pk1", "dk1", "tok", "us"
+        )
+
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_device_not_found_via_discovery_falls_back(self, mock_landbook_api):
@@ -50,7 +113,9 @@ class TestConnectLocalClient:
         lock = asyncio.Lock()
         mock_landbook_api.discover_devices.return_value = []  # nothing found
 
-        result = await _connect_local_client(hass, entry, accounts, lock, "u1", "pk1", "dk1")
+        result = await _connect_local_client(
+            hass, entry, accounts, lock, "u1", "pk1", "dk1", "tok", "us"
+        )
 
         assert result is None
         mock_landbook_api.local_client.connect.assert_not_called()
@@ -68,13 +133,16 @@ class TestConnectLocalClient:
             )
         ]
 
-        result = await _connect_local_client(hass, entry, accounts, lock, "u1", "pk1", "dk1")
+        result = await _connect_local_client(
+            hass, entry, accounts, lock, "u1", "pk1", "dk1", "tok", "us"
+        )
 
         assert result is mock_landbook_api.local_client
         mock_landbook_api.local_client_cls.assert_called_once_with(
             "pk1", "dk1", "dGVzdGtleQ==", "10.0.0.5", 6607
         )
         mock_landbook_api.local_client.connect.assert_called_once()
+        mock_landbook_api.async_get_device_list.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_connect_failure_falls_back(self, mock_landbook_api):
@@ -90,7 +158,9 @@ class TestConnectLocalClient:
         ]
         mock_landbook_api.local_client.connect.side_effect = ConnectionError("login rejected")
 
-        result = await _connect_local_client(hass, entry, accounts, lock, "u1", "pk1", "dk1")
+        result = await _connect_local_client(
+            hass, entry, accounts, lock, "u1", "pk1", "dk1", "tok", "us"
+        )
 
         assert result is None
 
@@ -109,8 +179,8 @@ class TestConnectLocalClient:
             )
         ]
 
-        await _connect_local_client(hass, entry1, accounts, lock, "u1", "pk1", "dk1")
-        await _connect_local_client(hass, entry2, accounts, lock, "u1", "pk1", "dk1")
+        await _connect_local_client(hass, entry1, accounts, lock, "u1", "pk1", "dk1", "tok", "us")
+        await _connect_local_client(hass, entry2, accounts, lock, "u1", "pk1", "dk1", "tok", "us")
 
         mock_landbook_api.discover_devices.assert_called_once()
 
@@ -125,8 +195,12 @@ class TestConnectLocalClient:
         lock = asyncio.Lock()
         mock_landbook_api.discover_devices.side_effect = OSError("no route to host")
 
-        r1 = await _connect_local_client(hass, entry1, accounts, lock, "u1", "pk1", "dk1")
-        r2 = await _connect_local_client(hass, entry2, accounts, lock, "u1", "pk1", "dk1")
+        r1 = await _connect_local_client(
+            hass, entry1, accounts, lock, "u1", "pk1", "dk1", "tok", "us"
+        )
+        r2 = await _connect_local_client(
+            hass, entry2, accounts, lock, "u1", "pk1", "dk1", "tok", "us"
+        )
 
         assert r1 is None
         assert r2 is None
