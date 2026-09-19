@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.0](https://github.com/zackwag/landbook-ha/compare/v1.5.0...v1.6.0) (2026-09-19)
+
+
+### Features
+
+* add opt-in local control option, grouped account-wide ([#37](https://github.com/zackwag/landbook-ha/issues/37)) ([246842d](https://github.com/zackwag/landbook-ha/commit/246842df4790ee812cd6e745c29699777586907e))
+* wire local-LAN control into the write path ([#39](https://github.com/zackwag/landbook-ha/issues/39)) ([1d2579e](https://github.com/zackwag/landbook-ha/commit/1d2579e349148a1f82bddac4196548bb5b775530))
+
 ## [1.5.0](https://github.com/zackwag/landbook-ha/compare/v1.4.1...v1.5.0) (2026-09-18)
 
 
