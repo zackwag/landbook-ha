@@ -13,6 +13,7 @@ from landbook_api.local_protocol import TYPE_BOOL_TRUE, TYPE_BYTES, TYPE_NUMBER,
 
 from custom_components.landbook import (
     _connect_local_client,
+    _make_local_disconnect_handler,
     _make_local_state_handler,
     _make_send_command,
 )
@@ -387,6 +388,40 @@ class TestSetupEntryLocalControl:
         assert entry_data["state"]["power"] is True
 
     @pytest.mark.asyncio
+    async def test_on_disconnect_wired_and_clears_local_client_on_real_setup(
+        self, mock_landbook_api
+    ):
+        from custom_components.landbook import async_setup, async_setup_entry
+
+        hass = make_hass()
+        api = mock_landbook_api
+        api.discover_devices.return_value = [
+            DiscoveredDevice(
+                product_key="pk1", device_key="dk1", ip="10.0.0.5", port=6607, version=1
+            )
+        ]
+        api.async_get_tsl.return_value = [
+            {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL", "sort": 0, "specs": []},
+        ]
+
+        entry = make_config_entry(hass, entry_id="e1", uid="u1")
+        entry.data[CONF_AUTH_KEY] = "dGVzdGtleQ=="
+        register_entry(hass, entry)
+
+        await async_setup(hass, {})
+        await async_setup_entry(hass, entry)
+
+        entry_data = hass.data[DOMAIN]["e1"]
+        assert entry_data["local_client"] is api.local_client  # sanity check
+        assert callable(api.local_client.on_disconnect)
+
+        api.local_client.on_disconnect()
+
+        assert entry_data["local_client"] is None
+        assert entry_data["local_codes"] == set()
+        assert "e1" not in hass.data[DOMAIN]["_accounts"]["u1"]["local_clients"]
+
+    @pytest.mark.asyncio
     async def test_no_local_client_never_touches_local_client_mock(self, mock_landbook_api):
         from custom_components.landbook import async_setup, async_setup_entry
 
@@ -696,3 +731,67 @@ class TestMakeLocalStateHandler:
 
         handler = _make_local_state_handler(hass, "missing", {1: "power"})
         handler([TTLVField(1, TYPE_BOOL_TRUE, True)])  # must not raise
+
+
+class TestMakeLocalDisconnectHandler:
+    def test_clears_local_client_and_local_codes(self):
+        hass = make_hass()
+        local_client = MagicMock()
+        entry_data = {
+            "local_client": local_client,
+            "local_codes": {"power", "speed"},
+            "online": True,
+        }
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {"u1": {"local_clients": {"e1": local_client}}},
+        }
+
+        handler = _make_local_disconnect_handler(hass, "e1", "u1", "dk1")
+        handler()
+
+        assert entry_data["local_client"] is None
+        assert entry_data["local_codes"] == set()
+        assert "e1" not in hass.data[DOMAIN]["_accounts"]["u1"]["local_clients"]
+
+    def test_does_not_touch_online_status(self):
+        """A dead local socket doesn't mean the device itself is offline —
+        cloud MQTT's onl_ event stays the sole source of truth for that."""
+        hass = make_hass()
+        entry_data = {"local_client": MagicMock(), "local_codes": {"power"}, "online": True}
+        hass.data[DOMAIN] = {"e1": entry_data, "_accounts": {"u1": {"local_clients": {}}}}
+
+        handler = _make_local_disconnect_handler(hass, "e1", "u1", "dk1")
+        handler()
+
+        assert entry_data["online"] is True
+
+    def test_noop_when_local_client_already_none(self):
+        """A clean, caller-initiated disconnect() never fires this
+        callback (see landbook_api), but defend against a stray call
+        anyway rather than assuming it can't happen."""
+        hass = make_hass()
+        entry_data = {"local_client": None, "local_codes": set(), "online": True}
+        hass.data[DOMAIN] = {"e1": entry_data, "_accounts": {"u1": {"local_clients": {}}}}
+
+        handler = _make_local_disconnect_handler(hass, "e1", "u1", "dk1")
+        handler()  # must not raise
+
+    def test_missing_entry_data_is_a_noop(self):
+        hass = make_hass()
+        hass.data[DOMAIN] = {}
+
+        handler = _make_local_disconnect_handler(hass, "missing", "u1", "dk1")
+        handler()  # must not raise
+
+    def test_missing_account_is_a_noop(self):
+        """The account dict might already be gone (e.g. account-wide
+        teardown mid-flight) — must not raise."""
+        hass = make_hass()
+        entry_data = {"local_client": MagicMock(), "local_codes": {"power"}, "online": True}
+        hass.data[DOMAIN] = {"e1": entry_data, "_accounts": {}}
+
+        handler = _make_local_disconnect_handler(hass, "e1", "u1", "dk1")
+        handler()  # must not raise
+
+        assert entry_data["local_client"] is None
