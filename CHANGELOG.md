@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.1.0](https://github.com/zackwag/landbook-ha/compare/v2.0.2...v2.1.0) (2026-09-19)
+
+
+### Features
+
+* cache TSL model and skip REST state seed when local covers everything ([#51](https://github.com/zackwag/landbook-ha/issues/51)) ([7142ddc](https://github.com/zackwag/landbook-ha/commit/7142ddcdeb1fb400e2dba0cd149764c35ac56238))
+
+
+### Bug Fixes
+
+* clear local_client on an unexpected local disconnect ([#53](https://github.com/zackwag/landbook-ha/issues/53)) ([db1f7eb](https://github.com/zackwag/landbook-ha/commit/db1f7eb2baa741cd77580b867826dd7f6a5ae634))
+
 ## [2.0.2](https://github.com/zackwag/landbook-ha/compare/v2.0.1...v2.0.2) (2026-09-19)
 
 
