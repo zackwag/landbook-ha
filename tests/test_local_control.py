@@ -16,7 +16,12 @@ from custom_components.landbook import (
     _make_local_state_handler,
     _make_send_command,
 )
-from custom_components.landbook.const import CONF_AUTH_KEY, CONF_DEVICE_KEY, DOMAIN
+from custom_components.landbook.const import (
+    CONF_AUTH_KEY,
+    CONF_DEVICE_KEY,
+    CONF_PRODUCT_KEY,
+    DOMAIN,
+)
 
 from .conftest import make_config_entry, make_hass, register_entry
 
@@ -399,6 +404,129 @@ class TestSetupEntryLocalControl:
         # local_client is not None` block) should never have been used.
         api.local_client.read.assert_not_called()
         assert hass.data[DOMAIN]["e1"]["local_client"] is None
+
+    @pytest.mark.asyncio
+    async def test_initial_cloud_read_skipped_when_local_connected(self, mock_landbook_api):
+        from custom_components.landbook import async_setup, async_setup_entry
+
+        hass = make_hass()
+        api = mock_landbook_api
+        api.discover_devices.return_value = [
+            DiscoveredDevice(
+                product_key="pk1", device_key="dk1", ip="10.0.0.5", port=6607, version=1
+            )
+        ]
+        api.async_get_tsl.return_value = [
+            {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL", "sort": 0, "specs": []},
+        ]
+
+        entry = make_config_entry(hass, entry_id="e1", uid="u1")
+        entry.data[CONF_AUTH_KEY] = "dGVzdGtleQ=="
+        register_entry(hass, entry)
+
+        await async_setup(hass, {})
+        await async_setup_entry(hass, entry)
+
+        assert hass.data[DOMAIN]["e1"]["local_client"] is api.local_client  # sanity check
+        # Same rationale as _request_all_states: pointless and, on real
+        # hardware, failure-prone to ask cloud to read a device local
+        # control already connected to at setup.
+        api.mqtt.send_read.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_initial_cloud_read_sent_when_no_local_client(self, mock_landbook_api):
+        from custom_components.landbook import async_setup, async_setup_entry
+
+        hass = make_hass()
+        api = mock_landbook_api  # no authKey -> local control never connects
+
+        entry = make_config_entry(hass, entry_id="e1", uid="u1")
+        register_entry(hass, entry)
+
+        await async_setup(hass, {})
+        await async_setup_entry(hass, entry)
+
+        assert hass.data[DOMAIN]["e1"]["local_client"] is None  # sanity check
+        api.mqtt.send_read.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_rest_seed_skips_codes_local_control_covers_but_seeds_others(
+        self, mock_landbook_api
+    ):
+        """Regression test: the REST-based initial-state seed at the end of
+        setup must not overwrite a code local control already owns — e.g. a
+        stale cloud "off" clobbering a fan that's actually on after a
+        restart — but should still seed codes local control has no way to
+        report on at all, like a synthetic temperature property."""
+        from custom_components.landbook import async_setup, async_setup_entry
+
+        hass = make_hass()
+        api = mock_landbook_api
+        api.discover_devices.return_value = [
+            DiscoveredDevice(
+                product_key="pk1", device_key="dk1", ip="10.0.0.5", port=6607, version=1
+            )
+        ]
+        api.async_get_tsl.return_value = [
+            {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL", "sort": 0, "specs": []},
+        ]
+        # Cloud's cached snapshot says the fan is off (stale) and also
+        # reports a temperature that local control has no way to know
+        # about (not in the TSL, so no local TTLV id for it).
+        api.async_get_device_attributes.return_value = {
+            "customizeTslInfo": [
+                {"code": "power", "value": "false"},
+                {"code": "temperature", "value": "77"},
+            ],
+            "deviceData": {},
+        }
+
+        entry = make_config_entry(hass, entry_id="e1", uid="u1")
+        entry.data[CONF_AUTH_KEY] = "dGVzdGtleQ=="
+        register_entry(hass, entry)
+
+        await async_setup(hass, {})
+        await async_setup_entry(hass, entry)
+
+        entry_data = hass.data[DOMAIN]["e1"]
+        assert entry_data["local_client"] is api.local_client  # sanity check
+        assert "power" not in entry_data["state"]  # not clobbered with stale "off"
+        assert entry_data["state"]["temperature"] == "77"  # still seeded from cloud
+
+    @pytest.mark.asyncio
+    async def test_p11vkw_temperature_covered_by_confirmed_local_field_id(self, mock_landbook_api):
+        """Regression test for the real-hardware finding behind this fix:
+        on productKey p11vkW, field id 21 was confirmed (via landbook-ha#27
+        diagnostics) to push temperature locally, matching the device's own
+        display. It should be treated as local-covered like any other
+        property, rather than depending on cloud's bus_ channel."""
+        from custom_components.landbook import async_setup, async_setup_entry
+
+        hass = make_hass()
+        api = mock_landbook_api
+        api.discover_devices.return_value = [
+            DiscoveredDevice(
+                product_key="p11vkW", device_key="dk1", ip="10.0.0.5", port=6607, version=1
+            )
+        ]
+        api.async_get_tsl.return_value = [
+            {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL", "sort": 0, "specs": []},
+        ]
+
+        entry = make_config_entry(hass, entry_id="e1", uid="u1")
+        entry.data[CONF_PRODUCT_KEY] = "p11vkW"
+        entry.data[CONF_AUTH_KEY] = "dGVzdGtleQ=="
+        register_entry(hass, entry)
+
+        await async_setup(hass, {})
+        await async_setup_entry(hass, entry)
+
+        entry_data = hass.data[DOMAIN]["e1"]
+        assert entry_data["local_client"] is api.local_client  # sanity check
+        assert "temperature" in entry_data["local_codes"]
+
+        api.local_client.on_update([TTLVField(21, TYPE_NUMBER, 78)])
+        assert entry_data["state"]["temperature"] == 78
 
 
 class TestMqttCallbackLocalFirst:
