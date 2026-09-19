@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/zackwag/landbook-ha/compare/v2.0.0...v2.0.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* keep updating properties local control doesn't cover from cloud ([#47](https://github.com/zackwag/landbook-ha/issues/47)) ([66153f0](https://github.com/zackwag/landbook-ha/commit/66153f081f424415b52d744f170ee320f91320a0))
+
 ## [2.0.0](https://github.com/zackwag/landbook-ha/compare/v1.5.0...v2.0.0) (2026-09-19)
 
 
