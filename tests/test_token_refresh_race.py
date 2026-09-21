@@ -217,12 +217,8 @@ class TestRuntimeRefreshLock:
         refresher()
 
         call_args = api.refresh_token.call_args[0]
-        assert call_args[0] == "reauth_tok", (
-            f"Expected reauth access token, got '{call_args[0]}'"
-        )
-        assert call_args[1] == "reauth_ref", (
-            f"Expected reauth refresh token, got '{call_args[1]}'"
-        )
+        assert call_args[0] == "reauth_tok", f"Expected reauth access token, got '{call_args[0]}'"
+        assert call_args[1] == "reauth_ref", f"Expected reauth refresh token, got '{call_args[1]}'"
 
     def test_auth_error_honors_reauth_fired_guard(self, mock_landbook_api):
         """When _reauth_fired_{uid} is already set, the refresher must NOT
