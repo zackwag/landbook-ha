@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1](https://github.com/zackwag/landbook-ha/compare/v2.1.0...v2.1.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* reauth completion now heals live MQTT session, prevents reauth storm ([#55](https://github.com/zackwag/landbook-ha/issues/55)) ([c764a22](https://github.com/zackwag/landbook-ha/commit/c764a22af3e1b27b961b0504ce3dabd0abc25dd9))
+
 ## [2.1.0](https://github.com/zackwag/landbook-ha/compare/v2.0.2...v2.1.0) (2026-09-19)
 
 
