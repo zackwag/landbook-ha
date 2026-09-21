@@ -200,8 +200,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
             def _token_refresher() -> str:
                 with _refresh_lock:
-                    current_token = _latest_tokens["access"]
-                    current_refresh = _latest_tokens["refresh"]
+                    stored = account_tokens.get(uid, {})
+                    current_token = stored.get("access") or _latest_tokens["access"]
+                    current_refresh = stored.get("refresh") or _latest_tokens["refresh"]
                     try:
                         if not current_refresh:
                             raise LandbookAuthError(
@@ -214,13 +215,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         _LOGGER.warning("Token rejected for %s, triggering reauth: %s", uid, exc)
                         if accounts.get(uid, {}).get("client"):
                             accounts[uid]["client"].halt_reconnects()
-                        for eid in list(accounts.get(uid, {}).get("entries", set())):
-                            cfg_entry = hass.config_entries.async_get_entry(eid)
-                            if cfg_entry:
-                                hass.loop.call_soon_threadsafe(
-                                    hass.async_create_task,
-                                    _async_trigger_reauth(hass, cfg_entry),
-                                )
+                        if not domain_data.get(reauth_fired_key):
+                            domain_data[reauth_fired_key] = True
+                            entries = list(accounts.get(uid, {}).get("entries", set()))
+                            if entries:
+                                cfg_entry = hass.config_entries.async_get_entry(entries[0])
+                                if cfg_entry:
+                                    hass.loop.call_soon_threadsafe(
+                                        hass.async_create_task,
+                                        _async_trigger_reauth(hass, cfg_entry),
+                                    )
                         raise
                     except Exception as exc:
                         _LOGGER.warning(

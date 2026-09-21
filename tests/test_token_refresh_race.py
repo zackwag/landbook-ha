@@ -178,6 +178,158 @@ class TestRuntimeRefreshLock:
         # The persist is dispatched via call_soon_threadsafe, so check the call was made
         assert hass.loop.call_soon_threadsafe.called
 
+    def test_refresher_picks_up_reauth_written_tokens(self, mock_landbook_api):
+        """After reauth writes to account_tokens, the refresher must use those
+        tokens instead of the stale closure-captured _latest_tokens (#27)."""
+        hass = make_hass()
+        api = mock_landbook_api
+        from custom_components.landbook.const import DOMAIN
+
+        entry = make_config_entry(
+            hass, entry_id="ra1", uid="u1", bearer_token="tok_v1", refresh_token="ref_v1"
+        )
+        register_entry(hass, entry)
+        hass.data.setdefault(DOMAIN, {})
+
+        api.refresh_token.return_value = ("tok_v2", "ref_v2")
+
+        import asyncio
+
+        from custom_components.landbook import async_setup_entry
+
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(async_setup_entry(hass, entry))
+        finally:
+            loop.close()
+
+        call_kwargs = api.mqtt_cls.call_args
+        refresher = call_kwargs[1]["token_refresher"]
+
+        # Simulate reauth writing fresh tokens to account_tokens
+        hass.data[DOMAIN]["_account_tokens"]["u1"] = {
+            "access": "reauth_tok",
+            "refresh": "reauth_ref",
+        }
+
+        api.refresh_token.reset_mock()
+        api.refresh_token.return_value = ("tok_v3", "ref_v3")
+        refresher()
+
+        call_args = api.refresh_token.call_args[0]
+        assert call_args[0] == "reauth_tok", f"Expected reauth access token, got '{call_args[0]}'"
+        assert call_args[1] == "reauth_ref", f"Expected reauth refresh token, got '{call_args[1]}'"
+
+    def test_auth_error_honors_reauth_fired_guard(self, mock_landbook_api):
+        """When _reauth_fired_{uid} is already set, the refresher must NOT
+        fire reauth again (prevents the reauth storm from #27)."""
+        hass = make_hass()
+        api = mock_landbook_api
+        from custom_components.landbook.const import DOMAIN
+
+        entry = make_config_entry(
+            hass, entry_id="guard1", uid="u1", bearer_token="tok_v1", refresh_token="ref_v1"
+        )
+        register_entry(hass, entry)
+        hass.data.setdefault(DOMAIN, {})
+
+        api.refresh_token.return_value = ("tok_v2", "ref_v2")
+
+        import asyncio
+
+        from custom_components.landbook import async_setup_entry
+
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(async_setup_entry(hass, entry))
+        finally:
+            loop.close()
+
+        call_kwargs = api.mqtt_cls.call_args
+        refresher = call_kwargs[1]["token_refresher"]
+
+        # Pre-set the guard as if reauth was already fired
+        hass.data[DOMAIN]["_reauth_fired_u1"] = True
+        entry.async_start_reauth.reset_mock()
+        hass.loop.call_soon_threadsafe.reset_mock()
+
+        api.refresh_token.side_effect = LandbookAuthError("Token refresh rejected")
+
+        with pytest.raises(LandbookAuthError, match="rejected"):
+            refresher()
+
+        # No reauth should have been dispatched — the guard prevented it
+        for call in hass.loop.call_soon_threadsafe.call_args_list:
+            args = call[0]
+            # call_soon_threadsafe(hass.async_create_task, coro) — if it
+            # triggered reauth there'd be a _async_trigger_reauth coro here
+            if len(args) >= 2:
+                coro = args[1]
+                if hasattr(coro, "cr_code"):
+                    assert "trigger_reauth" not in (coro.cr_code.co_name or ""), (
+                        "Reauth was fired despite _reauth_fired guard being set"
+                    )
+
+    def test_auth_error_fires_reauth_for_single_entry(self, mock_landbook_api):
+        """On first auth failure, reauth should fire for exactly one entry,
+        not all entries on the account (#27)."""
+        hass = make_hass()
+        api = mock_landbook_api
+        from custom_components.landbook.const import DOMAIN
+
+        entry1 = make_config_entry(
+            hass, entry_id="storm1", uid="u1", bearer_token="tok_v1", refresh_token="ref_v1"
+        )
+        entry2 = make_config_entry(
+            hass, entry_id="storm2", uid="u1", bearer_token="tok_v1", refresh_token="ref_v1"
+        )
+        entry2.data["device_key"] = "dk2"
+        register_entry(hass, entry1)
+        register_entry(hass, entry2)
+        hass.data.setdefault(DOMAIN, {})
+
+        api.refresh_token.return_value = ("tok_v2", "ref_v2")
+
+        import asyncio
+
+        from custom_components.landbook import async_setup_entry
+
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(async_setup_entry(hass, entry1))
+        finally:
+            loop.close()
+
+        # Register entry2 under the account
+        hass.data[DOMAIN]["_accounts"]["u1"]["entries"].add("storm2")
+
+        call_kwargs = api.mqtt_cls.call_args
+        refresher = call_kwargs[1]["token_refresher"]
+
+        # Ensure the guard is NOT set yet
+        assert not hass.data[DOMAIN].get("_reauth_fired_u1")
+
+        hass.loop.call_soon_threadsafe.reset_mock()
+        api.refresh_token.side_effect = LandbookAuthError("Token refresh rejected")
+
+        with pytest.raises(LandbookAuthError, match="rejected"):
+            refresher()
+
+        # Guard should now be set
+        assert hass.data[DOMAIN].get("_reauth_fired_u1") is True
+
+        # Count how many _async_trigger_reauth coroutines were dispatched
+        reauth_coros = []
+        for call in hass.loop.call_soon_threadsafe.call_args_list:
+            args = call[0]
+            if len(args) >= 2:
+                coro = args[1]
+                if hasattr(coro, "cr_code") and "trigger_reauth" in (coro.cr_code.co_name or ""):
+                    reauth_coros.append(coro)
+        assert len(reauth_coros) <= 1, (
+            f"Expected at most 1 reauth dispatch, got {len(reauth_coros)}"
+        )
+
     def test_sequential_refreshes_use_latest_token(self, mock_landbook_api):
         """The second refresh call must use the token pair from the first refresh,
         not the stale pair from config entries (which are updated asynchronously)."""

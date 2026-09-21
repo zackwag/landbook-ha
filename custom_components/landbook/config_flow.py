@@ -166,6 +166,23 @@ class LandbookFanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 CONF_REFRESH_TOKEN: refresh_token,
                             },
                         )
+
+                # Update the in-memory token store so the live MQTT
+                # client's refresher picks up the fresh pair instead
+                # of retrying the old burned one (#27).
+                domain_data = self.hass.data.get(DOMAIN, {})
+                account_tokens = domain_data.get("_account_tokens", {})
+                account_tokens[uid] = {
+                    "access": bearer_token,
+                    "refresh": refresh_token,
+                }
+                domain_data.pop(f"_reauth_fired_{uid}", None)
+
+                acct = domain_data.get("_accounts", {}).get(uid)
+                if acct and acct.get("client"):
+                    acct["client"]._reauth_pending = False
+                    acct["client"].update_token(bearer_token)
+
                 await self.hass.config_entries.async_reload(reauth_entry.entry_id)
                 return self.async_abort(reason="reauth_successful")
 
