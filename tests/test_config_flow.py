@@ -252,6 +252,56 @@ class TestReauthFlow:
         assert result["type"] == "form"
         assert result["step_id"] == "reauth_confirm"
 
+    @pytest.mark.asyncio
+    async def test_reauth_updates_in_memory_tokens_and_clears_halt(self):
+        """After reauth, account_tokens must hold the fresh pair, the
+        _reauth_fired guard must be cleared, and the MQTT client must be
+        un-halted with the new token (#27)."""
+        from custom_components.landbook.const import DOMAIN
+
+        flow = LandbookFanConfigFlow()
+        flow.hass = MagicMock()
+
+        mqtt_client = MagicMock()
+        mqtt_client._reauth_pending = True
+
+        flow.hass.data = {
+            DOMAIN: {
+                "_account_tokens": {},
+                "_accounts": {"uid1": {"client": mqtt_client}},
+                "_reauth_fired_uid1": True,
+            }
+        }
+
+        reauth_entry = MagicMock()
+        reauth_entry.data = {
+            CONF_EMAIL: "a@b.com",
+            CONF_REGION: "us",
+            CONF_UID: "uid1",
+        }
+        reauth_entry.entry_id = "e1"
+        flow._get_reauth_entry = MagicMock(return_value=reauth_entry)
+        flow.hass.config_entries.async_entries = MagicMock(return_value=[reauth_entry])
+        flow.hass.config_entries.async_update_entry = MagicMock()
+        flow.hass.config_entries.async_reload = AsyncMock()
+
+        with patch(
+            "custom_components.landbook.config_flow.async_login",
+            new_callable=AsyncMock,
+            return_value=("new_tok", "uid1", "new_ref"),
+        ):
+            result = await flow.async_step_reauth_confirm({CONF_PASSWORD: "pw"})
+
+        assert result["type"] == "abort"
+
+        tokens = flow.hass.data[DOMAIN]["_account_tokens"]["uid1"]
+        assert tokens == {"access": "new_tok", "refresh": "new_ref"}
+
+        assert "_reauth_fired_uid1" not in flow.hass.data[DOMAIN]
+
+        assert mqtt_client._reauth_pending is False
+        mqtt_client.update_token.assert_called_once_with("new_tok")
+
 
 # ---------------------------------------------------------------------------
 # Options flow
