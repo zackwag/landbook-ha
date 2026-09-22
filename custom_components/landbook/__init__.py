@@ -864,9 +864,7 @@ async def _async_local_reconnect_loop(
                     discovered = await hass.async_add_executor_job(
                         discover_devices, LOCAL_DISCOVERY_TIMEOUT
                     )
-                    acct["local_devices"] = {
-                        (d.product_key, d.device_key): d for d in discovered
-                    }
+                    acct["local_devices"] = {(d.product_key, d.device_key): d for d in discovered}
                 fresh = acct["local_devices"].get((pk, dk))
                 if fresh is not None:
                     ip, port = fresh.ip, fresh.port

@@ -980,10 +980,12 @@ class TestAsyncLocalReconnectLoop:
         )
         hass.data[DOMAIN] = {
             "e1": entry_data,
-            "_accounts": {"u1": {
-                "local_devices": {("pk1", "dk1"): cached},
-                "local_clients": {},
-            }},
+            "_accounts": {
+                "u1": {
+                    "local_devices": {("pk1", "dk1"): cached},
+                    "local_clients": {},
+                }
+            },
             "_client_locks": {"u1": asyncio.Lock()},
         }
 
@@ -1071,10 +1073,12 @@ class TestAsyncLocalReconnectLoop:
         }
         hass.data[DOMAIN] = {
             "e1": entry_data,
-            "_accounts": {"u1": {
-                "local_devices": {("pk1", "dk1"): cached},
-                "local_clients": {},
-            }},
+            "_accounts": {
+                "u1": {
+                    "local_devices": {("pk1", "dk1"): cached},
+                    "local_clients": {},
+                }
+            },
             "_client_locks": {"u1": asyncio.Lock()},
         }
 
@@ -1125,10 +1129,12 @@ class TestThreeFanReconnect:
             "e1": e1_data,
             "e2": e2_data,
             "e3": e3_data,
-            "_accounts": {"u1": {
-                "local_devices": local_devices,
-                "local_clients": local_clients,
-            }},
+            "_accounts": {
+                "u1": {
+                    "local_devices": local_devices,
+                    "local_clients": local_clients,
+                }
+            },
             "_client_locks": {"u1": asyncio.Lock()},
         }
         return hass
@@ -1190,12 +1196,8 @@ class TestThreeFanReconnect:
         asyncio.sleep = AsyncMock()
         try:
             # Run both reconnect loops — they serialize on client_lock
-            await _async_local_reconnect_loop(
-                hass, "e1", "u1", "pk1", "dk1", "auth1"
-            )
-            await _async_local_reconnect_loop(
-                hass, "e2", "u1", "pk1", "dk2", "auth2"
-            )
+            await _async_local_reconnect_loop(hass, "e1", "u1", "pk1", "dk1", "auth1")
+            await _async_local_reconnect_loop(hass, "e2", "u1", "pk1", "dk2", "auth2")
         finally:
             asyncio.sleep = original_sleep
 
@@ -1240,12 +1242,8 @@ class TestThreeFanReconnect:
         original_sleep = asyncio.sleep
         asyncio.sleep = AsyncMock()
         try:
-            await _async_local_reconnect_loop(
-                hass, "e1", "u1", "pk1", "dk1", "auth1"
-            )
-            await _async_local_reconnect_loop(
-                hass, "e3", "u1", "pk1", "dk3", "auth3"
-            )
+            await _async_local_reconnect_loop(hass, "e1", "u1", "pk1", "dk1", "auth1")
+            await _async_local_reconnect_loop(hass, "e3", "u1", "pk1", "dk3", "auth3")
         finally:
             asyncio.sleep = original_sleep
 
@@ -1265,9 +1263,7 @@ class TestThreeFanReconnect:
 
         asyncio.sleep = AsyncMock(side_effect=_counting_sleep)
         try:
-            await _async_local_reconnect_loop(
-                hass, "e2", "u1", "pk1", "dk2", "auth2"
-            )
+            await _async_local_reconnect_loop(hass, "e2", "u1", "pk1", "dk2", "auth2")
         finally:
             asyncio.sleep = original_sleep
 
@@ -1327,9 +1323,7 @@ class TestThreeFanReconnect:
         original_sleep = asyncio.sleep
         asyncio.sleep = AsyncMock()
         try:
-            await _async_local_reconnect_loop(
-                hass, "e1", "u1", "pk1", "dk1", "auth1"
-            )
+            await _async_local_reconnect_loop(hass, "e1", "u1", "pk1", "dk1", "auth1")
         finally:
             asyncio.sleep = original_sleep
 
@@ -1352,9 +1346,7 @@ class TestThreeFanReconnect:
 
         asyncio.sleep = AsyncMock()
         try:
-            await _async_local_reconnect_loop(
-                hass, "e3", "u1", "pk1", "dk3", "auth3"
-            )
+            await _async_local_reconnect_loop(hass, "e3", "u1", "pk1", "dk3", "auth3")
         finally:
             asyncio.sleep = original_sleep
 
