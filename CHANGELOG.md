@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/zackwag/landbook-ha/compare/v2.1.1...v2.2.0) (2026-09-22)
+
+
+### Features
+
+* automatic local-LAN reconnection after unexpected disconnect ([#57](https://github.com/zackwag/landbook-ha/issues/57)) ([695992d](https://github.com/zackwag/landbook-ha/commit/695992d25776fb2517c83ae7b487b548b1025092))
+
 ## [2.1.1](https://github.com/zackwag/landbook-ha/compare/v2.1.0...v2.1.1) (2026-09-21)
 
 
