@@ -5,17 +5,19 @@ _make_send_command, and _make_local_state_handler in __init__.py.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from landbook_api.local_client import DiscoveredDevice
 from landbook_api.local_protocol import TYPE_BOOL_TRUE, TYPE_BYTES, TYPE_NUMBER, TTLVField
 
 from custom_components.landbook import (
+    _async_local_reconnect_loop,
     _connect_local_client,
     _make_local_disconnect_handler,
     _make_local_state_handler,
     _make_send_command,
+    _wire_local_client,
 )
 from custom_components.landbook.const import (
     CONF_AUTH_KEY,
@@ -799,6 +801,7 @@ class TestMakeLocalDisconnectHandler:
         local_client = MagicMock()
         entry_data = {
             "local_client": local_client,
+            "local_generation": 1,
             "local_codes": {"power", "speed"},
             "online": True,
         }
@@ -807,7 +810,7 @@ class TestMakeLocalDisconnectHandler:
             "_accounts": {"u1": {"local_clients": {"e1": local_client}}},
         }
 
-        handler = _make_local_disconnect_handler(hass, "e1", "u1", "dk1")
+        handler = _make_local_disconnect_handler(hass, "e1", "u1", "pk1", "dk1", 1)
         handler()
 
         assert entry_data["local_client"] is None
@@ -818,10 +821,15 @@ class TestMakeLocalDisconnectHandler:
         """A dead local socket doesn't mean the device itself is offline —
         cloud MQTT's onl_ event stays the sole source of truth for that."""
         hass = make_hass()
-        entry_data = {"local_client": MagicMock(), "local_codes": {"power"}, "online": True}
+        entry_data = {
+            "local_client": MagicMock(),
+            "local_generation": 1,
+            "local_codes": {"power"},
+            "online": True,
+        }
         hass.data[DOMAIN] = {"e1": entry_data, "_accounts": {"u1": {"local_clients": {}}}}
 
-        handler = _make_local_disconnect_handler(hass, "e1", "u1", "dk1")
+        handler = _make_local_disconnect_handler(hass, "e1", "u1", "pk1", "dk1", 1)
         handler()
 
         assert entry_data["online"] is True
@@ -831,27 +839,519 @@ class TestMakeLocalDisconnectHandler:
         callback (see landbook_api), but defend against a stray call
         anyway rather than assuming it can't happen."""
         hass = make_hass()
-        entry_data = {"local_client": None, "local_codes": set(), "online": True}
+        entry_data = {
+            "local_client": None,
+            "local_generation": 0,
+            "local_codes": set(),
+            "online": True,
+        }
         hass.data[DOMAIN] = {"e1": entry_data, "_accounts": {"u1": {"local_clients": {}}}}
 
-        handler = _make_local_disconnect_handler(hass, "e1", "u1", "dk1")
+        handler = _make_local_disconnect_handler(hass, "e1", "u1", "pk1", "dk1", 0)
         handler()  # must not raise
 
     def test_missing_entry_data_is_a_noop(self):
         hass = make_hass()
         hass.data[DOMAIN] = {}
 
-        handler = _make_local_disconnect_handler(hass, "missing", "u1", "dk1")
+        handler = _make_local_disconnect_handler(hass, "missing", "u1", "pk1", "dk1", 1)
         handler()  # must not raise
 
     def test_missing_account_is_a_noop(self):
         """The account dict might already be gone (e.g. account-wide
         teardown mid-flight) — must not raise."""
         hass = make_hass()
-        entry_data = {"local_client": MagicMock(), "local_codes": {"power"}, "online": True}
+        entry_data = {
+            "local_client": MagicMock(),
+            "local_generation": 1,
+            "local_codes": {"power"},
+            "online": True,
+        }
         hass.data[DOMAIN] = {"e1": entry_data, "_accounts": {}}
 
-        handler = _make_local_disconnect_handler(hass, "e1", "u1", "dk1")
+        handler = _make_local_disconnect_handler(hass, "e1", "u1", "pk1", "dk1", 1)
         handler()  # must not raise
 
         assert entry_data["local_client"] is None
+
+    def test_stale_generation_is_a_noop(self):
+        """A reconnect installs a new local_client with a higher
+        generation — a stale on_disconnect from the old client's dying
+        thread must not clear the new one."""
+        hass = make_hass()
+        new_client = MagicMock()
+        entry_data = {
+            "local_client": new_client,
+            "local_generation": 2,
+            "local_codes": {"power"},
+            "online": True,
+        }
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {"u1": {"local_clients": {"e1": new_client}}},
+        }
+
+        old_handler = _make_local_disconnect_handler(hass, "e1", "u1", "pk1", "dk1", 1)
+        old_handler()
+
+        assert entry_data["local_client"] is new_client
+        assert entry_data["local_codes"] == {"power"}
+        assert "e1" in hass.data[DOMAIN]["_accounts"]["u1"]["local_clients"]
+
+
+class TestWireLocalClient:
+    def test_installs_callbacks_and_bumps_generation(self):
+        hass = make_hass()
+        local_client = MagicMock()
+        entry_data = {
+            "local_client": None,
+            "local_generation": 0,
+            "local_codes": set(),
+            "properties": [
+                {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL"},
+            ],
+            "temperature_prop": {"code": "temperature", "synthetic": True},
+        }
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {"u1": {"local_clients": {}}},
+        }
+
+        _wire_local_client(hass, "e1", "u1", "pk1", "dk1", local_client)
+
+        assert entry_data["local_client"] is local_client
+        assert entry_data["local_generation"] == 1
+        assert "power" in entry_data["local_codes"]
+        assert callable(local_client.on_update)
+        assert callable(local_client.on_disconnect)
+        assert "e1" in hass.data[DOMAIN]["_accounts"]["u1"]["local_clients"]
+        local_client.read.assert_called_once()
+
+    def test_second_wire_bumps_generation_again(self):
+        hass = make_hass()
+        client1 = MagicMock()
+        client2 = MagicMock()
+        entry_data = {
+            "local_client": None,
+            "local_generation": 0,
+            "local_codes": set(),
+            "properties": [
+                {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL"},
+            ],
+            "temperature_prop": None,
+        }
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {"u1": {"local_clients": {}}},
+        }
+
+        _wire_local_client(hass, "e1", "u1", "pk1", "dk1", client1)
+        assert entry_data["local_generation"] == 1
+
+        _wire_local_client(hass, "e1", "u1", "pk1", "dk1", client2)
+        assert entry_data["local_generation"] == 2
+        assert entry_data["local_client"] is client2
+
+    def test_missing_entry_data_is_a_noop(self):
+        hass = make_hass()
+        hass.data[DOMAIN] = {}
+        _wire_local_client(hass, "missing", "u1", "pk1", "dk1", MagicMock())
+
+
+class TestAsyncLocalReconnectLoop:
+    @pytest.mark.asyncio
+    async def test_reconnects_on_cached_ip(self, mock_landbook_api):
+        hass = make_hass()
+        api = mock_landbook_api
+        new_client = MagicMock()
+        api.local_client_cls.return_value = new_client
+
+        entry_data = {
+            "local_client": None,
+            "local_generation": 1,
+            "local_codes": set(),
+            "properties": [
+                {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL"},
+            ],
+            "temperature_prop": None,
+        }
+        cached = DiscoveredDevice(
+            product_key="pk1", device_key="dk1", ip="10.0.0.5", port=6607, version=1
+        )
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {
+                "u1": {
+                    "local_devices": {("pk1", "dk1"): cached},
+                    "local_clients": {},
+                }
+            },
+            "_client_locks": {"u1": asyncio.Lock()},
+        }
+
+        # Patch asyncio.sleep so test doesn't actually wait
+        original_sleep = asyncio.sleep
+        asyncio.sleep = AsyncMock()
+        try:
+            await _async_local_reconnect_loop(hass, "e1", "u1", "pk1", "dk1", "auth123")
+        finally:
+            asyncio.sleep = original_sleep
+
+        assert entry_data["local_client"] is new_client
+        assert entry_data["local_generation"] == 2
+        api.local_client_cls.assert_called_once_with("pk1", "dk1", "auth123", "10.0.0.5", 6607)
+
+    @pytest.mark.asyncio
+    async def test_exits_when_entry_data_gone(self, mock_landbook_api):
+        hass = make_hass()
+        hass.data[DOMAIN] = {}
+
+        original_sleep = asyncio.sleep
+        asyncio.sleep = AsyncMock()
+        try:
+            await _async_local_reconnect_loop(hass, "e1", "u1", "pk1", "dk1", "auth123")
+        finally:
+            asyncio.sleep = original_sleep
+
+        mock_landbook_api.local_client_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_exits_when_local_client_already_restored(self, mock_landbook_api):
+        hass = make_hass()
+        existing_client = MagicMock()
+        entry_data = {
+            "local_client": existing_client,
+            "local_generation": 2,
+            "local_codes": {"power"},
+            "properties": [],
+            "temperature_prop": None,
+        }
+        hass.data[DOMAIN] = {"e1": entry_data}
+
+        original_sleep = asyncio.sleep
+        asyncio.sleep = AsyncMock()
+        try:
+            await _async_local_reconnect_loop(hass, "e1", "u1", "pk1", "dk1", "auth123")
+        finally:
+            asyncio.sleep = original_sleep
+
+        assert entry_data["local_client"] is existing_client
+        mock_landbook_api.local_client_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_discovery_after_cached_failures(self, mock_landbook_api):
+        hass = make_hass()
+        api = mock_landbook_api
+
+        attempt = {"count": 0}
+        new_client = MagicMock()
+
+        def _connect_side_effect(timeout):
+            attempt["count"] += 1
+            if attempt["count"] <= 3:
+                raise ConnectionError("refused")
+
+        new_client.connect = MagicMock(side_effect=_connect_side_effect)
+        api.local_client_cls.return_value = new_client
+
+        cached = DiscoveredDevice(
+            product_key="pk1", device_key="dk1", ip="10.0.0.5", port=6607, version=1
+        )
+        fresh = DiscoveredDevice(
+            product_key="pk1", device_key="dk1", ip="10.0.0.99", port=6607, version=1
+        )
+        api.discover_devices.return_value = [fresh]
+
+        entry_data = {
+            "local_client": None,
+            "local_generation": 1,
+            "local_codes": set(),
+            "properties": [
+                {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL"},
+            ],
+            "temperature_prop": None,
+        }
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {
+                "u1": {
+                    "local_devices": {("pk1", "dk1"): cached},
+                    "local_clients": {},
+                }
+            },
+            "_client_locks": {"u1": asyncio.Lock()},
+        }
+
+        original_sleep = asyncio.sleep
+        asyncio.sleep = AsyncMock()
+        try:
+            await _async_local_reconnect_loop(hass, "e1", "u1", "pk1", "dk1", "auth123")
+        finally:
+            asyncio.sleep = original_sleep
+
+        assert entry_data["local_client"] is new_client
+        # First 3 attempts used cached IP, 4th used fresh discovery IP
+        calls = api.local_client_cls.call_args_list
+        assert calls[-1].args[3] == "10.0.0.99"
+        api.discover_devices.assert_called_once()
+
+
+class TestThreeFanReconnect:
+    """Multi-device scenarios modeled on a real 3-fan account (see issue #54
+    comments from @odinb): devices disconnect independently, discovery is
+    flaky (finds 2 of 3), and reconnect loops share the per-account
+    discovery cache and client_lock.
+    """
+
+    def _make_entry_data(self, dk, *, connected=True):
+        client = MagicMock() if connected else None
+        return {
+            "local_client": client,
+            "local_generation": 1 if connected else 0,
+            "local_codes": {"power"} if connected else set(),
+            "properties": [
+                {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL"},
+            ],
+            "temperature_prop": None,
+            "auth_key": "dGVzdGtleQ==",
+            "pk": "pk1",
+            "dk": dk,
+            "uid": "u1",
+        }
+
+    def _make_three_fan_hass(self, e1_data, e2_data, e3_data, local_devices):
+        hass = make_hass()
+        local_clients = {}
+        for eid, edata in [("e1", e1_data), ("e2", e2_data), ("e3", e3_data)]:
+            if edata["local_client"] is not None:
+                local_clients[eid] = edata["local_client"]
+        hass.data[DOMAIN] = {
+            "e1": e1_data,
+            "e2": e2_data,
+            "e3": e3_data,
+            "_accounts": {
+                "u1": {
+                    "local_devices": local_devices,
+                    "local_clients": local_clients,
+                }
+            },
+            "_client_locks": {"u1": asyncio.Lock()},
+        }
+        return hass
+
+    def test_one_fan_disconnect_leaves_others_untouched(self):
+        """Fan dk1 drops — dk2 and dk3 stay local, their local_clients and
+        local_codes are not affected."""
+        e1 = self._make_entry_data("dk1")
+        e2 = self._make_entry_data("dk2")
+        e3 = self._make_entry_data("dk3")
+        hass = self._make_three_fan_hass(e1, e2, e3, {})
+
+        handler = _make_local_disconnect_handler(hass, "e1", "u1", "pk1", "dk1", 1)
+        handler()
+
+        assert e1["local_client"] is None
+        assert e1["local_codes"] == set()
+        assert e2["local_client"] is not None
+        assert e2["local_codes"] == {"power"}
+        assert e3["local_client"] is not None
+        assert e3["local_codes"] == {"power"}
+        assert "e1" not in hass.data[DOMAIN]["_accounts"]["u1"]["local_clients"]
+        assert "e2" in hass.data[DOMAIN]["_accounts"]["u1"]["local_clients"]
+        assert "e3" in hass.data[DOMAIN]["_accounts"]["u1"]["local_clients"]
+
+    @pytest.mark.asyncio
+    async def test_two_fans_reconnect_share_single_discovery(self, mock_landbook_api):
+        """dk1 and dk2 both disconnect and run reconnect loops. Both exhaust
+        their cached-IP tries and fall back to discovery — the second loop
+        should reuse the first's result via the shared cache, not broadcast
+        again."""
+        api = mock_landbook_api
+
+        e1 = self._make_entry_data("dk1", connected=False)
+        e2 = self._make_entry_data("dk2", connected=False)
+        e3 = self._make_entry_data("dk3")
+
+        fresh_dk1 = DiscoveredDevice(
+            product_key="pk1", device_key="dk1", ip="10.0.0.11", port=6607, version=1
+        )
+        fresh_dk2 = DiscoveredDevice(
+            product_key="pk1", device_key="dk2", ip="10.0.0.12", port=6607, version=1
+        )
+        api.discover_devices.return_value = [fresh_dk1, fresh_dk2]
+
+        # No cached entries for dk1/dk2 — forces immediate discovery
+        hass = self._make_three_fan_hass(e1, e2, e3, {})
+
+        client_per_dk = {}
+
+        def _make_client(pk, dk, auth, ip, port):
+            c = MagicMock()
+            client_per_dk[dk] = c
+            return c
+
+        api.local_client_cls.side_effect = _make_client
+
+        original_sleep = asyncio.sleep
+        asyncio.sleep = AsyncMock()
+        try:
+            # Run both reconnect loops — they serialize on client_lock
+            await _async_local_reconnect_loop(hass, "e1", "u1", "pk1", "dk1", "auth1")
+            await _async_local_reconnect_loop(hass, "e2", "u1", "pk1", "dk2", "auth2")
+        finally:
+            asyncio.sleep = original_sleep
+
+        assert e1["local_client"] is client_per_dk["dk1"]
+        assert e2["local_client"] is client_per_dk["dk2"]
+        # Discovery ran once for the first loop; the second reused the
+        # cache that the first populated.
+        api.discover_devices.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_discovery_finds_two_of_three_fans(self, mock_landbook_api):
+        """Real-world flakiness: discovery only finds dk1 and dk3 — dk2
+        keeps retrying (with backoff) instead of giving up or crashing.
+        Meanwhile dk1 and dk3 reconnect successfully."""
+        api = mock_landbook_api
+
+        e1 = self._make_entry_data("dk1", connected=False)
+        e2 = self._make_entry_data("dk2", connected=False)
+        e3 = self._make_entry_data("dk3", connected=False)
+
+        # Discovery only finds dk1 and dk3
+        fresh_dk1 = DiscoveredDevice(
+            product_key="pk1", device_key="dk1", ip="10.0.0.11", port=6607, version=1
+        )
+        fresh_dk3 = DiscoveredDevice(
+            product_key="pk1", device_key="dk3", ip="10.0.0.13", port=6607, version=1
+        )
+        api.discover_devices.return_value = [fresh_dk1, fresh_dk3]
+
+        # No cached IPs at all
+        hass = self._make_three_fan_hass(e1, e2, e3, {})
+
+        clients = {}
+
+        def _make_client(pk, dk, auth, ip, port):
+            c = MagicMock()
+            clients[dk] = c
+            return c
+
+        api.local_client_cls.side_effect = _make_client
+
+        original_sleep = asyncio.sleep
+        asyncio.sleep = AsyncMock()
+        try:
+            await _async_local_reconnect_loop(hass, "e1", "u1", "pk1", "dk1", "auth1")
+            await _async_local_reconnect_loop(hass, "e3", "u1", "pk1", "dk3", "auth3")
+        finally:
+            asyncio.sleep = original_sleep
+
+        assert e1["local_client"] is clients["dk1"]
+        assert e3["local_client"] is clients["dk3"]
+
+        # dk2's loop: discovery doesn't find it, so it stays disconnected
+        # and the loop keeps retrying. Simulate 2 iterations to prove it
+        # doesn't crash and does back off.
+        iteration = {"n": 0}
+
+        async def _counting_sleep(delay):
+            iteration["n"] += 1
+            if iteration["n"] >= 2:
+                # After 2 retries, remove entry_data to stop the loop
+                hass.data[DOMAIN].pop("e2", None)
+
+        asyncio.sleep = AsyncMock(side_effect=_counting_sleep)
+        try:
+            await _async_local_reconnect_loop(hass, "e2", "u1", "pk1", "dk2", "auth2")
+        finally:
+            asyncio.sleep = original_sleep
+
+        assert "dk2" not in clients
+        assert iteration["n"] >= 2
+
+    @pytest.mark.asyncio
+    async def test_one_fan_reconnect_updates_shared_cache_for_others(self, mock_landbook_api):
+        """dk1's reconnect runs fresh discovery which finds all 3 devices
+        with new IPs. When dk3 later disconnects and reconnects, it should
+        use the updated cached IP from dk1's discovery, not re-discover."""
+        api = mock_landbook_api
+
+        e1 = self._make_entry_data("dk1", connected=False)
+        e2 = self._make_entry_data("dk2")
+        e3 = self._make_entry_data("dk3")
+
+        # Stale cached IPs
+        stale = {
+            ("pk1", "dk1"): DiscoveredDevice(
+                product_key="pk1", device_key="dk1", ip="10.0.0.1", port=6607, version=1
+            ),
+            ("pk1", "dk2"): DiscoveredDevice(
+                product_key="pk1", device_key="dk2", ip="10.0.0.2", port=6607, version=1
+            ),
+            ("pk1", "dk3"): DiscoveredDevice(
+                product_key="pk1", device_key="dk3", ip="10.0.0.3", port=6607, version=1
+            ),
+        }
+        hass = self._make_three_fan_hass(e1, e2, e3, stale)
+
+        # dk1's cached IP fails 3 times, triggering fresh discovery
+        attempt = {"count": 0}
+
+        def _connect_side_effect(timeout):
+            attempt["count"] += 1
+            if attempt["count"] <= 3:
+                raise ConnectionError("refused")
+
+        new_client = MagicMock()
+        new_client.connect = MagicMock(side_effect=_connect_side_effect)
+        api.local_client_cls.return_value = new_client
+
+        # Fresh discovery returns all 3 with new IPs
+        api.discover_devices.return_value = [
+            DiscoveredDevice(
+                product_key="pk1", device_key="dk1", ip="10.0.0.51", port=6607, version=1
+            ),
+            DiscoveredDevice(
+                product_key="pk1", device_key="dk2", ip="10.0.0.52", port=6607, version=1
+            ),
+            DiscoveredDevice(
+                product_key="pk1", device_key="dk3", ip="10.0.0.53", port=6607, version=1
+            ),
+        ]
+
+        original_sleep = asyncio.sleep
+        asyncio.sleep = AsyncMock()
+        try:
+            await _async_local_reconnect_loop(hass, "e1", "u1", "pk1", "dk1", "auth1")
+        finally:
+            asyncio.sleep = original_sleep
+
+        # dk1 reconnected on the new IP
+        assert e1["local_client"] is new_client
+
+        # The shared cache now has the new IPs for all 3 devices
+        acct = hass.data[DOMAIN]["_accounts"]["u1"]
+        assert acct["local_devices"][("pk1", "dk3")].ip == "10.0.0.53"
+
+        # Now dk3 disconnects — its reconnect should use the updated
+        # cached IP (10.0.0.53), not trigger a new discovery
+        e3["local_client"] = None
+        e3["local_generation"] = 1
+        e3["local_codes"] = set()
+
+        dk3_client = MagicMock()
+        api.local_client_cls.return_value = dk3_client
+        api.discover_devices.reset_mock()
+
+        asyncio.sleep = AsyncMock()
+        try:
+            await _async_local_reconnect_loop(hass, "e3", "u1", "pk1", "dk3", "auth3")
+        finally:
+            asyncio.sleep = original_sleep
+
+        assert e3["local_client"] is dk3_client
+        # Used the cached IP from dk1's discovery, no new broadcast
+        create_calls = [c for c in api.local_client_cls.call_args_list if c.args[1] == "dk3"]
+        assert create_calls[-1].args[3] == "10.0.0.53"
+        api.discover_devices.assert_not_called()

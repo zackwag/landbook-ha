@@ -45,6 +45,10 @@ from .const import (
     DOMAIN,
     LOCAL_CONNECT_TIMEOUT,
     LOCAL_DISCOVERY_TIMEOUT,
+    LOCAL_RECONNECT_BACKOFF,
+    LOCAL_RECONNECT_CACHED_TRIES,
+    LOCAL_RECONNECT_INITIAL,
+    LOCAL_RECONNECT_MAX,
     LOCAL_TEMPERATURE_IDS,
     MQTT_WATCHDOG_CHECK_INTERVAL,
     MQTT_WATCHDOG_STALE_INTERVAL,
@@ -325,16 +329,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     local_client = await _connect_local_client(
         hass, entry, accounts, client_lock, uid, pk, dk, bearer_token, region
     )
-    if local_client is not None:
-        accounts[uid]["local_clients"][entry.entry_id] = local_client
 
     domain_data[entry.entry_id] = {
         "mqtt_client": mqtt_client,
-        "local_client": local_client,
+        "local_client": None,
+        "local_generation": 0,
         "properties": properties,
         "device_id": device_id,
         "pk": pk,
         "dk": dk,
+        "auth_key": entry.data.get(CONF_AUTH_KEY),
         "power_prop": power_prop,
         "speed_prop": speed_prop,
         "mode_prop": mode_prop,
@@ -358,28 +362,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     domain_data[entry.entry_id]["send_command"] = _make_send_command(hass, entry.entry_id)
 
     if local_client is not None:
-        id_to_code = {p["id"]: p["code"] for p in properties if "id" in p}
-        # Temperature isn't in the TSL model, so it's never in `properties`
-        # above — but for products where its local field id has been
-        # confirmed (LOCAL_TEMPERATURE_IDS), map it too, so local control
-        # covers it instead of depending on cloud's bus_ channel, which has
-        # proven unreliable (#27). Guarded by `synthetic` so a product that
-        # *does* have a real TSL temperature property (with its own id)
-        # never gets silently overridden by this hardcoded one.
-        temp_id = LOCAL_TEMPERATURE_IDS.get(pk)
-        if temp_id is not None and temperature_prop and temperature_prop.get("synthetic"):
-            id_to_code[temp_id] = "temperature"
-        domain_data[entry.entry_id]["local_codes"] = set(id_to_code.values())
-        local_client.on_update = _make_local_state_handler(hass, entry.entry_id, id_to_code)
-        local_client.on_disconnect = _make_local_disconnect_handler(hass, entry.entry_id, uid, dk)
-        # Best-effort nudge — on real hardware tested so far, a device
-        # pushes its own properties continuously regardless of whether this
-        # is called, so this mostly just matches the protocol rather than
-        # being load-bearing. Never block/fail setup over it.
-        try:
-            local_client.read(list(id_to_code.keys()))
-        except Exception as exc:  # noqa: BLE001 - best-effort, device still self-reports
-            _LOGGER.debug("Landbook: initial local read for %s failed: %s", dk, exc)
+        _wire_local_client(hass, entry.entry_id, uid, pk, dk, local_client)
 
     def _mqtt_callback(suffix: str, payload: Any) -> None:
         entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
@@ -722,13 +705,20 @@ def _make_local_state_handler(hass: HomeAssistant, entry_id: str, id_to_code: di
     return _on_local_update
 
 
-def _make_local_disconnect_handler(hass: HomeAssistant, entry_id: str, uid: str, dk: str):
+def _make_local_disconnect_handler(
+    hass: HomeAssistant, entry_id: str, uid: str, pk: str, dk: str, generation: int
+):
     """Build the callback wired to LandbookLocalClient.on_disconnect.
 
-    Local control has no auto-reconnect of its own yet, so once the
-    connection drops unexpectedly there's nothing to wait for — clear
-    entry_data["local_client"] (and the account-level local_clients entry)
-    so every local-vs-cloud fork in this module (_make_send_command,
+    Each local connection is assigned a monotonically increasing generation
+    number (entry_data["local_generation"]). The handler captured here only
+    acts when its own generation still matches the current one — so a stale
+    on_disconnect from a superseded client (e.g. the old connection's recv
+    thread fires after a reconnect already installed a new client) is a
+    harmless no-op instead of nuking the brand-new connection.
+
+    Clears entry_data["local_client"] (and the account-level local_clients
+    entry) so every local-vs-cloud fork in this module (_make_send_command,
     _mqtt_callback's bus_ skip, the cloud read-request skips) immediately
     treats this device as cloud-only again, instead of silently starving
     on a dead reference until the next full HA restart.
@@ -747,9 +737,17 @@ def _make_local_disconnect_handler(hass: HomeAssistant, entry_id: str, uid: str,
         entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
         if entry_data is None or entry_data.get("local_client") is None:
             return
+        if entry_data.get("local_generation", 0) != generation:
+            _LOGGER.debug(
+                "Landbook: ignoring stale disconnect for %s (generation %d, current %d)",
+                dk,
+                generation,
+                entry_data.get("local_generation", 0),
+            )
+            return
         _LOGGER.warning(
             "Landbook: local connection to %s lost unexpectedly — "
-            "falling back to cloud MQTT for the rest of this session",
+            "falling back to cloud MQTT, will attempt reconnect",
             dk,
         )
         entry_data["local_client"] = None
@@ -759,7 +757,156 @@ def _make_local_disconnect_handler(hass: HomeAssistant, entry_id: str, uid: str,
         if acct is not None:
             acct["local_clients"].pop(entry_id, None)
 
+        auth_key = entry_data.get("auth_key")
+        if auth_key:
+            hass.loop.call_soon_threadsafe(
+                hass.async_create_task,
+                _async_local_reconnect_loop(hass, entry_id, uid, pk, dk, auth_key),
+            )
+
     return _on_local_disconnect
+
+
+def _wire_local_client(
+    hass: HomeAssistant,
+    entry_id: str,
+    uid: str,
+    pk: str,
+    dk: str,
+    local_client: LandbookLocalClient,
+) -> None:
+    """Install callbacks on a local client and update entry_data to treat it
+    as the authoritative source for all codes it can report on. Used both at
+    initial setup and after a successful reconnect.
+    """
+    entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
+    if entry_data is None:
+        return
+    properties = entry_data["properties"]
+    temperature_prop = entry_data.get("temperature_prop")
+
+    id_to_code = {p["id"]: p["code"] for p in properties if "id" in p}
+    temp_id = LOCAL_TEMPERATURE_IDS.get(pk)
+    if temp_id is not None and temperature_prop and temperature_prop.get("synthetic"):
+        id_to_code[temp_id] = "temperature"
+
+    generation = entry_data.get("local_generation", 0) + 1
+    entry_data["local_client"] = local_client
+    entry_data["local_generation"] = generation
+    entry_data["local_codes"] = set(id_to_code.values())
+
+    accounts = hass.data.get(DOMAIN, {}).get("_accounts", {})
+    acct = accounts.get(uid)
+    if acct is not None:
+        acct["local_clients"][entry_id] = local_client
+
+    local_client.on_update = _make_local_state_handler(hass, entry_id, id_to_code)
+    local_client.on_disconnect = _make_local_disconnect_handler(
+        hass, entry_id, uid, pk, dk, generation
+    )
+
+    try:
+        local_client.read(list(id_to_code.keys()))
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.debug("Landbook: initial local read for %s failed: %s", dk, exc)
+
+
+async def _async_local_reconnect_loop(
+    hass: HomeAssistant,
+    entry_id: str,
+    uid: str,
+    pk: str,
+    dk: str,
+    auth_key: str,
+) -> None:
+    """Exponential-backoff reconnect loop, started from the disconnect handler.
+
+    Tries the cached IP/port first (fast path — devices hang but IPs rarely
+    change). After LOCAL_RECONNECT_CACHED_TRIES consecutive failures on the
+    cached address, falls back to a fresh UDP discovery pass before each
+    subsequent attempt, guarded by the per-account client_lock so two entries
+    don't race on the broadcast port.
+
+    Cancelled on successful reconnect (naturally exits), entry unload
+    (entry_data gone), or when a newer generation takes over.
+    """
+    delay = LOCAL_RECONNECT_INITIAL
+    cached_failures = 0
+
+    while True:
+        await asyncio.sleep(delay)
+
+        entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
+        if entry_data is None:
+            return
+        if entry_data.get("local_client") is not None:
+            return
+
+        accounts = hass.data.get(DOMAIN, {}).get("_accounts", {})
+        acct = accounts.get(uid)
+        if acct is None:
+            return
+
+        ip: str | None = None
+        port: int | None = None
+
+        cached = acct.get("local_devices") or {}
+        match = cached.get((pk, dk))
+        if match is not None and cached_failures < LOCAL_RECONNECT_CACHED_TRIES:
+            ip, port = match.ip, match.port
+        else:
+            client_locks = hass.data.get(DOMAIN, {}).get("_client_locks", {})
+            client_lock = client_locks.get(uid)
+            if client_lock is None:
+                return
+            try:
+                async with client_lock:
+                    discovered = await hass.async_add_executor_job(
+                        discover_devices, LOCAL_DISCOVERY_TIMEOUT
+                    )
+                    acct["local_devices"] = {(d.product_key, d.device_key): d for d in discovered}
+                fresh = acct["local_devices"].get((pk, dk))
+                if fresh is not None:
+                    ip, port = fresh.ip, fresh.port
+                    cached_failures = 0
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.debug("Landbook: reconnect discovery for %s failed: %s", dk, exc)
+
+        if ip is None:
+            _LOGGER.debug(
+                "Landbook: reconnect for %s — device not found, retrying in %.0fs",
+                dk,
+                min(delay * LOCAL_RECONNECT_BACKOFF, LOCAL_RECONNECT_MAX),
+            )
+            cached_failures += 1
+            delay = min(delay * LOCAL_RECONNECT_BACKOFF, LOCAL_RECONNECT_MAX)
+            continue
+
+        new_client = LandbookLocalClient(pk, dk, auth_key, ip, port)
+        try:
+            await hass.async_add_executor_job(new_client.connect, LOCAL_CONNECT_TIMEOUT)
+        except ConnectionError as exc:
+            _LOGGER.debug(
+                "Landbook: reconnect for %s failed (%s), retrying in %.0fs",
+                dk,
+                exc,
+                min(delay * LOCAL_RECONNECT_BACKOFF, LOCAL_RECONNECT_MAX),
+            )
+            cached_failures += 1
+            delay = min(delay * LOCAL_RECONNECT_BACKOFF, LOCAL_RECONNECT_MAX)
+            continue
+
+        entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
+        if entry_data is None:
+            await hass.async_add_executor_job(new_client.disconnect)
+            return
+        if entry_data.get("local_client") is not None:
+            await hass.async_add_executor_job(new_client.disconnect)
+            return
+
+        _wire_local_client(hass, entry_id, uid, pk, dk, new_client)
+        _LOGGER.info("Landbook: local control reconnected for %s", dk)
+        return
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
