@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.3](https://github.com/zackwag/landbook-ha/compare/v2.2.2...v2.2.3) (2026-09-22)
+
+
+### Bug Fixes
+
+* confirm data-plane recovery before trusting a local reconnect ([#65](https://github.com/zackwag/landbook-ha/issues/65)) ([02477c9](https://github.com/zackwag/landbook-ha/commit/02477c9ee5e4b891756aeee7a3d341e8319610a2))
+
 ## [2.2.2](https://github.com/zackwag/landbook-ha/compare/v2.2.1...v2.2.2) (2026-09-22)
 
 
