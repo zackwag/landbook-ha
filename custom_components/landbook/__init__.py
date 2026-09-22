@@ -50,8 +50,6 @@ from .const import (
     LOCAL_RECONNECT_INITIAL,
     LOCAL_RECONNECT_MAX,
     LOCAL_TEMPERATURE_IDS,
-    LOCAL_WEDGE_CHECK_INTERVAL,
-    LOCAL_WEDGE_TIMEOUT,
     MQTT_WATCHDOG_CHECK_INTERVAL,
     MQTT_WATCHDOG_STALE_INTERVAL,
     OSCILLATION_NAME_HINTS,
@@ -518,8 +516,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Start signal strength polling if the option is enabled
     _setup_signal_polling(hass, entry, bearer_token, pk, dk, region)
 
-    _setup_local_wedge_check(hass, entry, uid, pk, dk)
-
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Reload when options change so temperature unit takes effect immediately
@@ -689,7 +685,6 @@ def _make_local_state_handler(hass: HomeAssistant, entry_id: str, id_to_code: di
         entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
         if entry_data is None:
             return
-        entry_data["last_local_push"] = time.monotonic()
         changed: set[str] = set()
         for f in fields:
             code = id_to_code.get(f.id)
@@ -799,7 +794,6 @@ def _wire_local_client(
     entry_data["local_client"] = local_client
     entry_data["local_generation"] = generation
     entry_data["local_codes"] = set(id_to_code.values())
-    entry_data["last_local_push"] = time.monotonic()
 
     accounts = hass.data.get(DOMAIN, {}).get("_accounts", {})
     acct = accounts.get(uid)
@@ -913,77 +907,6 @@ async def _async_local_reconnect_loop(
         _wire_local_client(hass, entry_id, uid, pk, dk, new_client)
         _LOGGER.info("Landbook: local control reconnected for %s", dk)
         return
-
-
-def _setup_local_wedge_check(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    uid: str,
-    pk: str,
-    dk: str,
-) -> None:
-    """Start a periodic check for a "connected but silent" local session.
-
-    A device can wedge — the TCP socket stays up and the device reports
-    ONLINE over cloud MQTT, but it stops echoing any local-LAN frames.
-    Since on_disconnect never fires in this state, the reconnect loop
-    never kicks in and the entry is stuck: HA thinks it's local, the
-    device ignores the local session, and the Landbook app (which falls
-    back to cloud writes) works fine. Observed repeatedly on real hardware
-    (issue #54, @odinb's 9C04B66CF098).
-
-    This timer checks every LOCAL_WEDGE_CHECK_INTERVAL seconds. If a
-    local_client is present, the device is online per cloud MQTT, and no
-    local push has arrived for LOCAL_WEDGE_TIMEOUT seconds, we
-    force-disconnect the wedged client — which clears local_client and
-    local_codes so writes immediately fall back to cloud — and kick off
-    the reconnect loop to try again later.
-    """
-
-    async def _check_wedge(_now: object = None) -> None:
-        entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-        if entry_data is None:
-            return
-        local_client = entry_data.get("local_client")
-        if local_client is None:
-            return
-        if not entry_data.get("online", False):
-            return
-
-        last_push = entry_data.get("last_local_push")
-        if last_push is None:
-            return
-        silent_for = time.monotonic() - last_push
-        if silent_for < LOCAL_WEDGE_TIMEOUT:
-            return
-
-        _LOGGER.warning(
-            "Landbook: local session to %s appears wedged — connected but "
-            "no state push for %.0fs while device is online; "
-            "demoting to cloud MQTT, will attempt reconnect",
-            dk,
-            silent_for,
-        )
-
-        entry_data["local_client"] = None
-        entry_data["local_codes"] = set()
-        accounts = hass.data.get(DOMAIN, {}).get("_accounts", {})
-        acct = accounts.get(uid)
-        if acct is not None:
-            acct["local_clients"].pop(entry.entry_id, None)
-
-        await hass.async_add_executor_job(local_client.disconnect)
-
-        auth_key = entry_data.get("auth_key")
-        if auth_key:
-            hass.async_create_task(
-                _async_local_reconnect_loop(hass, entry.entry_id, uid, pk, dk, auth_key),
-            )
-
-    cancel = async_track_time_interval(
-        hass, _check_wedge, timedelta(seconds=LOCAL_WEDGE_CHECK_INTERVAL)
-    )
-    entry.async_on_unload(cancel)
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
