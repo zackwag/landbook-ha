@@ -1508,3 +1508,152 @@ class TestLocalWedgeCheck:
         assert e3["local_client"] is client3
         client2.disconnect.assert_not_called()
         client3.disconnect.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_two_of_three_fans_wedged_both_demoted(self, mock_landbook_api):
+        """dk1 and dk3 are wedged, dk2 is healthy — each entry has its
+        own wedge timer, so both wedged fans get demoted independently."""
+        hass = make_hass()
+        client1 = MagicMock()
+        client2 = MagicMock()
+        client3 = MagicMock()
+        stale = time.monotonic() - LOCAL_WEDGE_TIMEOUT - 10
+        e1 = self._make_entry_data(client1, last_push=stale)
+        e2 = self._make_entry_data(client2, last_push=time.monotonic())
+        e2["dk"] = "dk2"
+        e3 = self._make_entry_data(client3, last_push=stale)
+        e3["dk"] = "dk3"
+        hass.data[DOMAIN] = {
+            "e1": e1,
+            "e2": e2,
+            "e3": e3,
+            "_accounts": {
+                "u1": {
+                    "local_clients": {"e1": client1, "e2": client2, "e3": client3},
+                }
+            },
+        }
+
+        check_wedge_1 = self._setup_and_get_callback(hass, "e1", "u1", "pk1", "dk1")
+        check_wedge_3 = self._setup_and_get_callback(hass, "e3", "u1", "pk1", "dk3")
+        with patch(
+            "custom_components.landbook._async_local_reconnect_loop", new_callable=AsyncMock
+        ):
+            await check_wedge_1(None)
+            await check_wedge_3(None)
+
+        assert e1["local_client"] is None
+        assert e3["local_client"] is None
+        client1.disconnect.assert_called_once()
+        client3.disconnect.assert_called_once()
+        assert e2["local_client"] is client2
+        client2.disconnect.assert_not_called()
+        assert "e1" not in hass.data[DOMAIN]["_accounts"]["u1"]["local_clients"]
+        assert "e2" in hass.data[DOMAIN]["_accounts"]["u1"]["local_clients"]
+        assert "e3" not in hass.data[DOMAIN]["_accounts"]["u1"]["local_clients"]
+
+    @pytest.mark.asyncio
+    async def test_all_three_fans_wedged(self, mock_landbook_api):
+        """All three fans wedge (e.g. router flap that keeps sockets up
+        but breaks routing) — all three demoted to cloud."""
+        hass = make_hass()
+        client1 = MagicMock()
+        client2 = MagicMock()
+        client3 = MagicMock()
+        stale = time.monotonic() - LOCAL_WEDGE_TIMEOUT - 10
+        e1 = self._make_entry_data(client1, last_push=stale)
+        e2 = self._make_entry_data(client2, last_push=stale)
+        e2["dk"] = "dk2"
+        e3 = self._make_entry_data(client3, last_push=stale)
+        e3["dk"] = "dk3"
+        hass.data[DOMAIN] = {
+            "e1": e1,
+            "e2": e2,
+            "e3": e3,
+            "_accounts": {
+                "u1": {
+                    "local_clients": {"e1": client1, "e2": client2, "e3": client3},
+                }
+            },
+        }
+
+        check_1 = self._setup_and_get_callback(hass, "e1", "u1", "pk1", "dk1")
+        check_2 = self._setup_and_get_callback(hass, "e2", "u1", "pk1", "dk2")
+        check_3 = self._setup_and_get_callback(hass, "e3", "u1", "pk1", "dk3")
+        with patch(
+            "custom_components.landbook._async_local_reconnect_loop", new_callable=AsyncMock
+        ):
+            await check_1(None)
+            await check_2(None)
+            await check_3(None)
+
+        for e, c in [(e1, client1), (e2, client2), (e3, client3)]:
+            assert e["local_client"] is None
+            c.disconnect.assert_called_once()
+        assert hass.data[DOMAIN]["_accounts"]["u1"]["local_clients"] == {}
+
+    @pytest.mark.asyncio
+    async def test_wedge_not_triggered_when_push_arrives_just_before_timeout(
+        self, mock_landbook_api
+    ):
+        """dk1 was silent for a while but a push arrived just before the
+        timeout — the session is healthy, not wedged."""
+        hass = make_hass()
+        client1 = MagicMock()
+        client2 = MagicMock()
+        client3 = MagicMock()
+        just_before = time.monotonic() - LOCAL_WEDGE_TIMEOUT + 5
+        e1 = self._make_entry_data(client1, last_push=just_before)
+        e2 = self._make_entry_data(client2, last_push=time.monotonic())
+        e2["dk"] = "dk2"
+        e3 = self._make_entry_data(client3, last_push=time.monotonic())
+        e3["dk"] = "dk3"
+        hass.data[DOMAIN] = {
+            "e1": e1,
+            "e2": e2,
+            "e3": e3,
+            "_accounts": {
+                "u1": {
+                    "local_clients": {"e1": client1, "e2": client2, "e3": client3},
+                }
+            },
+        }
+
+        check_wedge = self._setup_and_get_callback(hass, "e1", "u1", "pk1", "dk1")
+        await check_wedge(None)
+
+        assert e1["local_client"] is client1
+        client1.disconnect.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_wedged_fan_already_demoted_by_disconnect_is_a_noop(self, mock_landbook_api):
+        """dk1 had a real TCP disconnect (on_disconnect fired, reconnect
+        loop running) before the wedge timer fires — the wedge check
+        should be a no-op since local_client is already None."""
+        hass = make_hass()
+        client2 = MagicMock()
+        client3 = MagicMock()
+        stale = time.monotonic() - LOCAL_WEDGE_TIMEOUT - 10
+        e1 = self._make_entry_data(None, last_push=stale)
+        e1["local_codes"] = set()
+        e2 = self._make_entry_data(client2, last_push=time.monotonic())
+        e2["dk"] = "dk2"
+        e3 = self._make_entry_data(client3, last_push=time.monotonic())
+        e3["dk"] = "dk3"
+        hass.data[DOMAIN] = {
+            "e1": e1,
+            "e2": e2,
+            "e3": e3,
+            "_accounts": {
+                "u1": {
+                    "local_clients": {"e2": client2, "e3": client3},
+                }
+            },
+        }
+
+        check_wedge = self._setup_and_get_callback(hass, "e1", "u1", "pk1", "dk1")
+        await check_wedge(None)
+
+        assert e1["local_client"] is None
+        assert e2["local_client"] is client2
+        assert e3["local_client"] is client3
