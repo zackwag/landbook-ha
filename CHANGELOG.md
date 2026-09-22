@@ -6,6 +6,8 @@
 ### Bug Fixes
 
 * detect and demote wedged local sessions that stay connected but stop echoing ([#59](https://github.com/zackwag/landbook-ha/issues/59)) ([f09ed2d](https://github.com/zackwag/landbook-ha/commit/f09ed2d3033effef6637d718aa0e2527ad7d3d1d))
+* remove application-layer wedge detection, rely on transport-layer pong timeout in landbook-api ([#61](https://github.com/zackwag/landbook-ha/issues/61)) ([39c33f6](https://github.com/zackwag/landbook-ha/commit/39c33f6))
+* require landbook-api>=0.7.1 for heartbeat pong timeout and command split ([#62](https://github.com/zackwag/landbook-ha/issues/62)) ([5863b09](https://github.com/zackwag/landbook-ha/commit/5863b09))
 
 ## [2.2.0](https://github.com/zackwag/landbook-ha/compare/v2.1.1...v2.2.0) (2026-09-22)
 
