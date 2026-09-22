@@ -40,6 +40,14 @@ LOCAL_RECONNECT_INITIAL = 5.0  # seconds before first retry
 LOCAL_RECONNECT_MAX = 300.0  # cap at 5 minutes
 LOCAL_RECONNECT_BACKOFF = 2.0  # multiplier per consecutive failure
 LOCAL_RECONNECT_CACHED_TRIES = 3  # attempts on cached IP before fresh discovery
+# A device stuck in the "connected but silent" data-plane wedge (#54) still
+# completes a normal TCP connect/handshake — only its spontaneous property-push
+# cycle is dead — so a bare connect() is not proof the reconnect actually
+# restored a usable session. Healthy devices push everything within about a
+# second of connecting (see PR #49); this gives a generous margin before an
+# unconfirmed reconnect is treated as a failed attempt for backoff purposes.
+LOCAL_RECONNECT_CONFIRM_TIMEOUT = 5.0  # seconds to wait for a post-reconnect data push
+LOCAL_RECONNECT_CONFIRM_POLL = 0.1  # seconds between checks while waiting
 MQTT_WATCHDOG_CHECK_INTERVAL = 30  # seconds between dead-link checks
 MQTT_WATCHDOG_STALE_INTERVAL = 300  # zero-inbound-MQTT time before forcing reconnect
 
