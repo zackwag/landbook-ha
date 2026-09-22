@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.2](https://github.com/zackwag/landbook-ha/compare/v2.2.1...v2.2.2) (2026-09-22)
+
+
+### Bug Fixes
+
+* require landbook-api&gt;=0.7.2 for data-plane stall detection ([#63](https://github.com/zackwag/landbook-ha/issues/63)) ([b4ab241](https://github.com/zackwag/landbook-ha/commit/b4ab24131fef52befa6a4f675d6b39017bcbce25))
+
 ## [2.2.1](https://github.com/zackwag/landbook-ha/compare/v2.2.0...v2.2.1) (2026-09-22)
 
 
