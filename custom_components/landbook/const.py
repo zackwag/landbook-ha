@@ -40,6 +40,8 @@ LOCAL_RECONNECT_INITIAL = 5.0  # seconds before first retry
 LOCAL_RECONNECT_MAX = 300.0  # cap at 5 minutes
 LOCAL_RECONNECT_BACKOFF = 2.0  # multiplier per consecutive failure
 LOCAL_RECONNECT_CACHED_TRIES = 3  # attempts on cached IP before fresh discovery
+LOCAL_WEDGE_CHECK_INTERVAL = 30  # seconds between local-session health checks
+LOCAL_WEDGE_TIMEOUT = 120.0  # seconds of zero local pushes before treating session as wedged
 MQTT_WATCHDOG_CHECK_INTERVAL = 30  # seconds between dead-link checks
 MQTT_WATCHDOG_STALE_INTERVAL = 300  # zero-inbound-MQTT time before forcing reconnect
 

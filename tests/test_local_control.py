@@ -5,7 +5,8 @@ _make_send_command, and _make_local_state_handler in __init__.py.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from landbook_api.local_client import DiscoveredDevice
@@ -17,6 +18,7 @@ from custom_components.landbook import (
     _make_local_disconnect_handler,
     _make_local_state_handler,
     _make_send_command,
+    _setup_local_wedge_check,
     _wire_local_client,
 )
 from custom_components.landbook.const import (
@@ -24,6 +26,7 @@ from custom_components.landbook.const import (
     CONF_DEVICE_KEY,
     CONF_PRODUCT_KEY,
     DOMAIN,
+    LOCAL_WEDGE_TIMEOUT,
 )
 
 from .conftest import make_config_entry, make_hass, register_entry
@@ -1355,3 +1358,302 @@ class TestThreeFanReconnect:
         create_calls = [c for c in api.local_client_cls.call_args_list if c.args[1] == "dk3"]
         assert create_calls[-1].args[3] == "10.0.0.53"
         api.discover_devices.assert_not_called()
+
+
+class TestLocalWedgeCheck:
+    """The local-session wedge detector: a device whose TCP socket stays up
+    but stops echoing any local-LAN frames while cloud MQTT says it's
+    online. Observed repeatedly on real hardware (issue #54, @odinb's
+    9C04B66CF098). The check runs periodically and demotes the entry to
+    cloud writes when the silence exceeds LOCAL_WEDGE_TIMEOUT.
+    """
+
+    def _make_entry_data(self, local_client, *, online=True, last_push=None):
+        return {
+            "local_client": local_client,
+            "local_generation": 1,
+            "local_codes": {"power"},
+            "last_local_push": last_push if last_push is not None else time.monotonic(),
+            "online": online,
+            "auth_key": "dGVzdGtleQ==",
+            "properties": [
+                {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL"},
+            ],
+            "temperature_prop": None,
+            "pk": "pk1",
+            "dk": "dk1",
+            "uid": "u1",
+        }
+
+    def _setup_and_get_callback(self, hass, entry_id, uid, pk, dk):
+        """Patch async_track_time_interval, call _setup_local_wedge_check,
+        and return the captured callback."""
+        captured = {}
+        entry = make_config_entry(hass, entry_id=entry_id)
+        with patch(
+            "custom_components.landbook.async_track_time_interval",
+            side_effect=lambda _hass, cb, _interval: captured.update({"cb": cb}) or (lambda: None),
+        ):
+            _setup_local_wedge_check(hass, entry, uid, pk, dk)
+        return captured["cb"]
+
+    @pytest.mark.asyncio
+    async def test_demotes_wedged_session_to_cloud(self, mock_landbook_api):
+        """A local session that's been silent for longer than
+        LOCAL_WEDGE_TIMEOUT while the device is online gets
+        force-disconnected and demoted to cloud."""
+        hass = make_hass()
+        local_client = MagicMock()
+        stale_push = time.monotonic() - LOCAL_WEDGE_TIMEOUT - 10
+        entry_data = self._make_entry_data(local_client, last_push=stale_push)
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {"u1": {"local_clients": {"e1": local_client}}},
+        }
+
+        check_wedge = self._setup_and_get_callback(hass, "e1", "u1", "pk1", "dk1")
+        with patch(
+            "custom_components.landbook._async_local_reconnect_loop", new_callable=AsyncMock
+        ):
+            await check_wedge(None)
+
+        assert entry_data["local_client"] is None
+        assert entry_data["local_codes"] == set()
+        local_client.disconnect.assert_called_once()
+        assert "e1" not in hass.data[DOMAIN]["_accounts"]["u1"]["local_clients"]
+
+    @pytest.mark.asyncio
+    async def test_no_action_when_pushes_are_recent(self, mock_landbook_api):
+        """A healthy local session with recent pushes should not be touched."""
+        hass = make_hass()
+        local_client = MagicMock()
+        entry_data = self._make_entry_data(local_client, last_push=time.monotonic())
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {"u1": {"local_clients": {"e1": local_client}}},
+        }
+
+        check_wedge = self._setup_and_get_callback(hass, "e1", "u1", "pk1", "dk1")
+        await check_wedge(None)
+
+        assert entry_data["local_client"] is local_client
+        local_client.disconnect.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_action_when_device_offline(self, mock_landbook_api):
+        """If the device is offline per cloud MQTT, silence is expected
+        and should not trigger a wedge demotion."""
+        hass = make_hass()
+        local_client = MagicMock()
+        stale_push = time.monotonic() - LOCAL_WEDGE_TIMEOUT - 10
+        entry_data = self._make_entry_data(local_client, online=False, last_push=stale_push)
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {"u1": {"local_clients": {"e1": local_client}}},
+        }
+
+        check_wedge = self._setup_and_get_callback(hass, "e1", "u1", "pk1", "dk1")
+        await check_wedge(None)
+
+        assert entry_data["local_client"] is local_client
+        local_client.disconnect.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_action_when_no_local_client(self, mock_landbook_api):
+        """Cloud-only entries (no local_client) should not be affected."""
+        hass = make_hass()
+        entry_data = self._make_entry_data(None)
+        entry_data["local_codes"] = set()
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {"u1": {"local_clients": {}}},
+        }
+
+        check_wedge = self._setup_and_get_callback(hass, "e1", "u1", "pk1", "dk1")
+        await check_wedge(None)  # must not raise
+
+    @pytest.mark.asyncio
+    async def test_wedge_on_one_fan_does_not_affect_siblings(self, mock_landbook_api):
+        """Three fans, one wedged — the other two keep local control."""
+        hass = make_hass()
+        client1 = MagicMock()
+        client2 = MagicMock()
+        client3 = MagicMock()
+        stale = time.monotonic() - LOCAL_WEDGE_TIMEOUT - 10
+        e1 = self._make_entry_data(client1, last_push=stale)
+        e2 = self._make_entry_data(client2, last_push=time.monotonic())
+        e2["dk"] = "dk2"
+        e3 = self._make_entry_data(client3, last_push=time.monotonic())
+        e3["dk"] = "dk3"
+        hass.data[DOMAIN] = {
+            "e1": e1,
+            "e2": e2,
+            "e3": e3,
+            "_accounts": {
+                "u1": {
+                    "local_clients": {"e1": client1, "e2": client2, "e3": client3},
+                }
+            },
+        }
+
+        check_wedge = self._setup_and_get_callback(hass, "e1", "u1", "pk1", "dk1")
+        with patch(
+            "custom_components.landbook._async_local_reconnect_loop", new_callable=AsyncMock
+        ):
+            await check_wedge(None)
+
+        assert e1["local_client"] is None
+        client1.disconnect.assert_called_once()
+        assert e2["local_client"] is client2
+        assert e3["local_client"] is client3
+        client2.disconnect.assert_not_called()
+        client3.disconnect.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_two_of_three_fans_wedged_both_demoted(self, mock_landbook_api):
+        """dk1 and dk3 are wedged, dk2 is healthy — each entry has its
+        own wedge timer, so both wedged fans get demoted independently."""
+        hass = make_hass()
+        client1 = MagicMock()
+        client2 = MagicMock()
+        client3 = MagicMock()
+        stale = time.monotonic() - LOCAL_WEDGE_TIMEOUT - 10
+        e1 = self._make_entry_data(client1, last_push=stale)
+        e2 = self._make_entry_data(client2, last_push=time.monotonic())
+        e2["dk"] = "dk2"
+        e3 = self._make_entry_data(client3, last_push=stale)
+        e3["dk"] = "dk3"
+        hass.data[DOMAIN] = {
+            "e1": e1,
+            "e2": e2,
+            "e3": e3,
+            "_accounts": {
+                "u1": {
+                    "local_clients": {"e1": client1, "e2": client2, "e3": client3},
+                }
+            },
+        }
+
+        check_wedge_1 = self._setup_and_get_callback(hass, "e1", "u1", "pk1", "dk1")
+        check_wedge_3 = self._setup_and_get_callback(hass, "e3", "u1", "pk1", "dk3")
+        with patch(
+            "custom_components.landbook._async_local_reconnect_loop", new_callable=AsyncMock
+        ):
+            await check_wedge_1(None)
+            await check_wedge_3(None)
+
+        assert e1["local_client"] is None
+        assert e3["local_client"] is None
+        client1.disconnect.assert_called_once()
+        client3.disconnect.assert_called_once()
+        assert e2["local_client"] is client2
+        client2.disconnect.assert_not_called()
+        assert "e1" not in hass.data[DOMAIN]["_accounts"]["u1"]["local_clients"]
+        assert "e2" in hass.data[DOMAIN]["_accounts"]["u1"]["local_clients"]
+        assert "e3" not in hass.data[DOMAIN]["_accounts"]["u1"]["local_clients"]
+
+    @pytest.mark.asyncio
+    async def test_all_three_fans_wedged(self, mock_landbook_api):
+        """All three fans wedge (e.g. router flap that keeps sockets up
+        but breaks routing) — all three demoted to cloud."""
+        hass = make_hass()
+        client1 = MagicMock()
+        client2 = MagicMock()
+        client3 = MagicMock()
+        stale = time.monotonic() - LOCAL_WEDGE_TIMEOUT - 10
+        e1 = self._make_entry_data(client1, last_push=stale)
+        e2 = self._make_entry_data(client2, last_push=stale)
+        e2["dk"] = "dk2"
+        e3 = self._make_entry_data(client3, last_push=stale)
+        e3["dk"] = "dk3"
+        hass.data[DOMAIN] = {
+            "e1": e1,
+            "e2": e2,
+            "e3": e3,
+            "_accounts": {
+                "u1": {
+                    "local_clients": {"e1": client1, "e2": client2, "e3": client3},
+                }
+            },
+        }
+
+        check_1 = self._setup_and_get_callback(hass, "e1", "u1", "pk1", "dk1")
+        check_2 = self._setup_and_get_callback(hass, "e2", "u1", "pk1", "dk2")
+        check_3 = self._setup_and_get_callback(hass, "e3", "u1", "pk1", "dk3")
+        with patch(
+            "custom_components.landbook._async_local_reconnect_loop", new_callable=AsyncMock
+        ):
+            await check_1(None)
+            await check_2(None)
+            await check_3(None)
+
+        for e, c in [(e1, client1), (e2, client2), (e3, client3)]:
+            assert e["local_client"] is None
+            c.disconnect.assert_called_once()
+        assert hass.data[DOMAIN]["_accounts"]["u1"]["local_clients"] == {}
+
+    @pytest.mark.asyncio
+    async def test_wedge_not_triggered_when_push_arrives_just_before_timeout(
+        self, mock_landbook_api
+    ):
+        """dk1 was silent for a while but a push arrived just before the
+        timeout — the session is healthy, not wedged."""
+        hass = make_hass()
+        client1 = MagicMock()
+        client2 = MagicMock()
+        client3 = MagicMock()
+        just_before = time.monotonic() - LOCAL_WEDGE_TIMEOUT + 5
+        e1 = self._make_entry_data(client1, last_push=just_before)
+        e2 = self._make_entry_data(client2, last_push=time.monotonic())
+        e2["dk"] = "dk2"
+        e3 = self._make_entry_data(client3, last_push=time.monotonic())
+        e3["dk"] = "dk3"
+        hass.data[DOMAIN] = {
+            "e1": e1,
+            "e2": e2,
+            "e3": e3,
+            "_accounts": {
+                "u1": {
+                    "local_clients": {"e1": client1, "e2": client2, "e3": client3},
+                }
+            },
+        }
+
+        check_wedge = self._setup_and_get_callback(hass, "e1", "u1", "pk1", "dk1")
+        await check_wedge(None)
+
+        assert e1["local_client"] is client1
+        client1.disconnect.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_wedged_fan_already_demoted_by_disconnect_is_a_noop(self, mock_landbook_api):
+        """dk1 had a real TCP disconnect (on_disconnect fired, reconnect
+        loop running) before the wedge timer fires — the wedge check
+        should be a no-op since local_client is already None."""
+        hass = make_hass()
+        client2 = MagicMock()
+        client3 = MagicMock()
+        stale = time.monotonic() - LOCAL_WEDGE_TIMEOUT - 10
+        e1 = self._make_entry_data(None, last_push=stale)
+        e1["local_codes"] = set()
+        e2 = self._make_entry_data(client2, last_push=time.monotonic())
+        e2["dk"] = "dk2"
+        e3 = self._make_entry_data(client3, last_push=time.monotonic())
+        e3["dk"] = "dk3"
+        hass.data[DOMAIN] = {
+            "e1": e1,
+            "e2": e2,
+            "e3": e3,
+            "_accounts": {
+                "u1": {
+                    "local_clients": {"e2": client2, "e3": client3},
+                }
+            },
+        }
+
+        check_wedge = self._setup_and_get_callback(hass, "e1", "u1", "pk1", "dk1")
+        await check_wedge(None)
+
+        assert e1["local_client"] is None
+        assert e2["local_client"] is client2
+        assert e3["local_client"] is client3
