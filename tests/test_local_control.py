@@ -13,6 +13,7 @@ from landbook_api.local_protocol import TYPE_BOOL_TRUE, TYPE_BYTES, TYPE_NUMBER,
 
 from custom_components.landbook import (
     _async_local_reconnect_loop,
+    _confirm_local_data_plane,
     _connect_local_client,
     _make_local_disconnect_handler,
     _make_local_state_handler,
@@ -34,6 +35,18 @@ def _account(local_devices=None, local_clients=None):
         "local_devices": local_devices,
         "local_clients": local_clients if local_clients is not None else {},
     }
+
+
+def _make_confirming_client() -> MagicMock:
+    """A mock local client that behaves like a healthy device: read()
+    immediately triggers on_update, simulating the property push a real
+    device sends right after connecting. _confirm_local_data_plane now
+    requires this before a reconnect is treated as successful, so any test
+    that expects a reconnect to actually install a client needs a client
+    shaped like this rather than a bare MagicMock()."""
+    client = MagicMock()
+    client.read = MagicMock(side_effect=lambda ids: client.on_update([]))
+    return client
 
 
 class TestConnectLocalClient:
@@ -963,7 +976,7 @@ class TestAsyncLocalReconnectLoop:
     async def test_reconnects_on_cached_ip(self, mock_landbook_api):
         hass = make_hass()
         api = mock_landbook_api
-        new_client = MagicMock()
+        new_client = _make_confirming_client()
         api.local_client_cls.return_value = new_client
 
         entry_data = {
@@ -1044,7 +1057,7 @@ class TestAsyncLocalReconnectLoop:
         api = mock_landbook_api
 
         attempt = {"count": 0}
-        new_client = MagicMock()
+        new_client = _make_confirming_client()
 
         def _connect_side_effect(timeout):
             attempt["count"] += 1
@@ -1094,6 +1107,109 @@ class TestAsyncLocalReconnectLoop:
         calls = api.local_client_cls.call_args_list
         assert calls[-1].args[3] == "10.0.0.99"
         api.discover_devices.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_connect_succeeds_but_no_data_push_retries_instead_of_installing(
+        self, mock_landbook_api
+    ):
+        """Regression test for #54's follow-up: a device stuck in the
+        "connected but silent" data-plane wedge still completes connect()
+        fine — only its property-push cycle is dead. Treating that bare
+        connect() as a successful reconnect was the bug (the loop kept
+        reinstalling the same dead session every ~95s instead of backing
+        off). The unconfirmed client must be disconnected and the attempt
+        counted as a failure, not installed as the local session."""
+        hass = make_hass()
+        api = mock_landbook_api
+
+        wedged_client = MagicMock()  # connect() succeeds; read() never pushes data
+        api.local_client_cls.return_value = wedged_client
+
+        entry_data = {
+            "local_client": None,
+            "local_generation": 1,
+            "local_codes": set(),
+            "properties": [
+                {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL"},
+            ],
+            "temperature_prop": None,
+        }
+        cached = DiscoveredDevice(
+            product_key="pk1", device_key="dk1", ip="10.0.0.5", port=6607, version=1
+        )
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {
+                "u1": {
+                    "local_devices": {("pk1", "dk1"): cached},
+                    "local_clients": {},
+                }
+            },
+            "_client_locks": {"u1": asyncio.Lock()},
+        }
+
+        attempts = {"n": 0}
+
+        def _connect_side_effect(timeout):
+            attempts["n"] += 1
+            if attempts["n"] >= 2:
+                # Stop the loop once the first confirm-failure retry has
+                # started a second attempt, so the test doesn't spin forever
+                # on a mock that's permanently wedged by design.
+                hass.data[DOMAIN].pop("e1", None)
+
+        wedged_client.connect = MagicMock(side_effect=_connect_side_effect)
+
+        original_sleep = asyncio.sleep
+        asyncio.sleep = AsyncMock()
+        try:
+            await _async_local_reconnect_loop(hass, "e1", "u1", "pk1", "dk1", "auth123")
+        finally:
+            asyncio.sleep = original_sleep
+
+        assert attempts["n"] >= 2
+        assert entry_data.get("local_client") is None
+        # Disconnected after the unconfirmed first attempt, and again on the
+        # second attempt once entry_data disappears mid-loop (test teardown) —
+        # never installed as the local session either way.
+        assert wedged_client.disconnect.call_count >= 1
+
+
+class TestConfirmLocalDataPlane:
+    @pytest.mark.asyncio
+    async def test_returns_true_when_update_fires(self):
+        hass = make_hass()
+        client = MagicMock()
+        client.read = MagicMock(side_effect=lambda ids: client.on_update([]))
+
+        result = await _confirm_local_data_plane(hass, client, {1: "power"})
+
+        assert result is True
+        client.read.assert_called_once_with([1])
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_no_update_within_timeout(self):
+        hass = make_hass()
+        client = MagicMock()  # read() never triggers on_update — the wedge case
+
+        original_sleep = asyncio.sleep
+        asyncio.sleep = AsyncMock()
+        try:
+            result = await _confirm_local_data_plane(hass, client, {1: "power"})
+        finally:
+            asyncio.sleep = original_sleep
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_read_raises(self):
+        hass = make_hass()
+        client = MagicMock()
+        client.read = MagicMock(side_effect=OSError("broken pipe"))
+
+        result = await _confirm_local_data_plane(hass, client, {1: "power"})
+
+        assert result is False
 
 
 class TestThreeFanReconnect:
@@ -1186,7 +1302,7 @@ class TestThreeFanReconnect:
         client_per_dk = {}
 
         def _make_client(pk, dk, auth, ip, port):
-            c = MagicMock()
+            c = _make_confirming_client()
             client_per_dk[dk] = c
             return c
 
@@ -1233,7 +1349,7 @@ class TestThreeFanReconnect:
         clients = {}
 
         def _make_client(pk, dk, auth, ip, port):
-            c = MagicMock()
+            c = _make_confirming_client()
             clients[dk] = c
             return c
 
@@ -1303,7 +1419,7 @@ class TestThreeFanReconnect:
             if attempt["count"] <= 3:
                 raise ConnectionError("refused")
 
-        new_client = MagicMock()
+        new_client = _make_confirming_client()
         new_client.connect = MagicMock(side_effect=_connect_side_effect)
         api.local_client_cls.return_value = new_client
 
@@ -1340,7 +1456,7 @@ class TestThreeFanReconnect:
         e3["local_generation"] = 1
         e3["local_codes"] = set()
 
-        dk3_client = MagicMock()
+        dk3_client = _make_confirming_client()
         api.local_client_cls.return_value = dk3_client
         api.discover_devices.reset_mock()
 

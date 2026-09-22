@@ -47,6 +47,8 @@ from .const import (
     LOCAL_DISCOVERY_TIMEOUT,
     LOCAL_RECONNECT_BACKOFF,
     LOCAL_RECONNECT_CACHED_TRIES,
+    LOCAL_RECONNECT_CONFIRM_POLL,
+    LOCAL_RECONNECT_CONFIRM_TIMEOUT,
     LOCAL_RECONNECT_INITIAL,
     LOCAL_RECONNECT_MAX,
     LOCAL_TEMPERATURE_IDS,
@@ -767,6 +769,22 @@ def _make_local_disconnect_handler(
     return _on_local_disconnect
 
 
+def _build_local_id_to_code(entry_data: dict, pk: str) -> dict[int, str]:
+    """Map local-protocol property ids to TSL codes for one device, including
+    the synthetic temperature id when applicable (see LOCAL_TEMPERATURE_IDS).
+    Shared by _wire_local_client and _confirm_local_data_plane, which both
+    need it to know which ids to request/expect from a local connection.
+    """
+    properties = entry_data["properties"]
+    temperature_prop = entry_data.get("temperature_prop")
+
+    id_to_code = {p["id"]: p["code"] for p in properties if "id" in p}
+    temp_id = LOCAL_TEMPERATURE_IDS.get(pk)
+    if temp_id is not None and temperature_prop and temperature_prop.get("synthetic"):
+        id_to_code[temp_id] = "temperature"
+    return id_to_code
+
+
 def _wire_local_client(
     hass: HomeAssistant,
     entry_id: str,
@@ -777,18 +795,12 @@ def _wire_local_client(
 ) -> None:
     """Install callbacks on a local client and update entry_data to treat it
     as the authoritative source for all codes it can report on. Used both at
-    initial setup and after a successful reconnect.
+    initial setup and after a successful, data-plane-confirmed reconnect.
     """
     entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
     if entry_data is None:
         return
-    properties = entry_data["properties"]
-    temperature_prop = entry_data.get("temperature_prop")
-
-    id_to_code = {p["id"]: p["code"] for p in properties if "id" in p}
-    temp_id = LOCAL_TEMPERATURE_IDS.get(pk)
-    if temp_id is not None and temperature_prop and temperature_prop.get("synthetic"):
-        id_to_code[temp_id] = "temperature"
+    id_to_code = _build_local_id_to_code(entry_data, pk)
 
     generation = entry_data.get("local_generation", 0) + 1
     entry_data["local_client"] = local_client
@@ -811,6 +823,46 @@ def _wire_local_client(
         _LOGGER.debug("Landbook: initial local read for %s failed: %s", dk, exc)
 
 
+async def _confirm_local_data_plane(
+    hass: HomeAssistant,
+    local_client: LandbookLocalClient,
+    id_to_code: dict[int, str],
+) -> bool:
+    """Wait briefly for a freshly (re)connected local client to actually push
+    property data, rather than trusting a bare TCP connect.
+
+    A device stuck in the "connected but silent" data-plane wedge (#54's
+    follow-up) still completes a normal connect/handshake — only its
+    spontaneous property-push cycle is dead — so connect() succeeding is not
+    by itself evidence the session is usable. This issues a read (the same
+    nudge _wire_local_client sends) and waits up to
+    LOCAL_RECONNECT_CONFIRM_TIMEOUT for on_update to fire at least once.
+
+    on_update is called from LandbookLocalClient's background receive
+    thread. A plain flag (rather than an asyncio primitive) is enough here:
+    CPython's GIL makes the assignment atomic, and being up to one poll
+    interval stale costs nothing for a liveness check like this.
+    """
+    confirmed = False
+
+    def _on_first_update(fields: list) -> None:
+        nonlocal confirmed
+        confirmed = True
+
+    local_client.on_update = _on_first_update
+    try:
+        await hass.async_add_executor_job(local_client.read, list(id_to_code.keys()))
+    except Exception as exc:  # noqa: BLE001 - any failure here just means unconfirmed
+        _LOGGER.debug("Landbook: post-reconnect confirm read failed: %s", exc)
+        return False
+
+    elapsed = 0.0
+    while not confirmed and elapsed < LOCAL_RECONNECT_CONFIRM_TIMEOUT:
+        await asyncio.sleep(LOCAL_RECONNECT_CONFIRM_POLL)
+        elapsed += LOCAL_RECONNECT_CONFIRM_POLL
+    return confirmed
+
+
 async def _async_local_reconnect_loop(
     hass: HomeAssistant,
     entry_id: str,
@@ -827,8 +879,16 @@ async def _async_local_reconnect_loop(
     subsequent attempt, guarded by the per-account client_lock so two entries
     don't race on the broadcast port.
 
-    Cancelled on successful reconnect (naturally exits), entry unload
-    (entry_data gone), or when a newer generation takes over.
+    A successful connect() is not by itself treated as a successful
+    reconnect — see _confirm_local_data_plane. A device wedged in the
+    "connected but silent" data-plane stall (#54's follow-up) still accepts
+    a TCP connect, so without that confirmation this loop would reinstall
+    the same dead session every cycle and never back off (the bug that
+    prompted this check).
+
+    Cancelled on successful, data-plane-confirmed reconnect (naturally
+    exits), entry unload (entry_data gone), or when a newer generation
+    takes over.
     """
     delay = LOCAL_RECONNECT_INITIAL
     cached_failures = 0
@@ -901,6 +961,33 @@ async def _async_local_reconnect_loop(
             await hass.async_add_executor_job(new_client.disconnect)
             return
         if entry_data.get("local_client") is not None:
+            await hass.async_add_executor_job(new_client.disconnect)
+            return
+
+        # A wedged device (#54's data-plane-stall follow-up) still completes
+        # this connect() fine — only its property-push cycle is dead — so a
+        # successful TCP connect alone must not be trusted as a successful
+        # reconnect. Confirm the data plane actually resumed before treating
+        # this as recovered and handing it back its "consecutive failures"
+        # reset; an unconfirmed connect is a failed attempt like any other,
+        # so backoff keeps growing instead of resetting to 5s forever (the
+        # bug reported in #54).
+        id_to_code = _build_local_id_to_code(entry_data, pk)
+        if not await _confirm_local_data_plane(hass, new_client, id_to_code):
+            _LOGGER.warning(
+                "Landbook: reconnect for %s connected but no property data arrived "
+                "within %.0fs — device likely still wedged, retrying in %.0fs",
+                dk,
+                LOCAL_RECONNECT_CONFIRM_TIMEOUT,
+                min(delay * LOCAL_RECONNECT_BACKOFF, LOCAL_RECONNECT_MAX),
+            )
+            await hass.async_add_executor_job(new_client.disconnect)
+            cached_failures += 1
+            delay = min(delay * LOCAL_RECONNECT_BACKOFF, LOCAL_RECONNECT_MAX)
+            continue
+
+        entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
+        if entry_data is None or entry_data.get("local_client") is not None:
             await hass.async_add_executor_job(new_client.disconnect)
             return
 
