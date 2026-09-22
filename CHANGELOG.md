@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.1](https://github.com/zackwag/landbook-ha/compare/v2.2.0...v2.2.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* detect and demote wedged local sessions that stay connected but stop echoing ([#59](https://github.com/zackwag/landbook-ha/issues/59)) ([f09ed2d](https://github.com/zackwag/landbook-ha/commit/f09ed2d3033effef6637d718aa0e2527ad7d3d1d))
+
 ## [2.2.0](https://github.com/zackwag/landbook-ha/compare/v2.1.1...v2.2.0) (2026-09-22)
 
 
