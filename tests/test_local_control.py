@@ -283,14 +283,15 @@ class TestMakeSendCommand:
     def test_local_client_present_uses_local_not_cloud(self):
         hass = make_hass()
         local_client = MagicMock()
+        local_client.write_and_wait.return_value = True
         entry_data = self._entry_data(local_client=local_client)
         hass.data[DOMAIN] = {"e1": entry_data}
 
         send_command = _make_send_command(hass, "e1")
         send_command({"power": True, "speed": 3})
 
-        local_client.write.assert_called_once()
-        fields = local_client.write.call_args[0][0]
+        local_client.write_and_wait.assert_called_once()
+        fields = local_client.write_and_wait.call_args[0][0]
         # Bool fields encode their value in the TTLV *type*, not a value
         # byte (see local_protocol.field_for_property) — the power field's
         # value is expected to be None, not True.
@@ -300,10 +301,25 @@ class TestMakeSendCommand:
         }
         entry_data["mqtt_client"].send_write.assert_not_called()
 
+    def test_local_write_unacknowledged_falls_back_to_cloud(self):
+        hass = make_hass()
+        local_client = MagicMock()
+        local_client.write_and_wait.return_value = False
+        entry_data = self._entry_data(local_client=local_client)
+        hass.data[DOMAIN] = {"e1": entry_data}
+
+        send_command = _make_send_command(hass, "e1")
+        send_command({"power": False})
+
+        local_client.write_and_wait.assert_called_once()
+        entry_data["mqtt_client"].send_write.assert_called_once_with(
+            "qdpk1dk1", "pk1", "dk1", {"power": False}
+        )
+
     def test_local_write_failure_falls_back_to_cloud(self):
         hass = make_hass()
         local_client = MagicMock()
-        local_client.write.side_effect = OSError("connection reset")
+        local_client.write_and_wait.side_effect = OSError("connection reset")
         entry_data = self._entry_data(local_client=local_client)
         hass.data[DOMAIN] = {"e1": entry_data}
 
@@ -324,7 +340,7 @@ class TestMakeSendCommand:
         send_command = _make_send_command(hass, "e1")
         send_command({"power": True})
 
-        local_client.write.assert_not_called()
+        local_client.write_and_wait.assert_not_called()
         entry_data["mqtt_client"].send_write.assert_called_once_with(
             "qdpk1dk1", "pk1", "dk1", {"power": True}
         )
@@ -365,8 +381,9 @@ class TestSetupEntryLocalControl:
         entry_data = hass.data[DOMAIN]["e1"]
         assert entry_data["local_client"] is api.local_client
 
+        api.local_client.write_and_wait.return_value = True
         entry_data["send_command"]({"power": True})
-        api.local_client.write.assert_called_once()
+        api.local_client.write_and_wait.assert_called_once()
         api.mqtt.send_write.assert_not_called()
 
     @pytest.mark.asyncio
