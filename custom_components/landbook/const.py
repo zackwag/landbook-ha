@@ -49,7 +49,9 @@ LOCAL_RECONNECT_CACHED_TRIES = 3  # attempts on cached IP before fresh discovery
 LOCAL_RECONNECT_CONFIRM_TIMEOUT = 5.0  # seconds to wait for a post-reconnect data push
 LOCAL_RECONNECT_CONFIRM_POLL = 0.1  # seconds between checks while waiting
 LOCAL_RECONNECT_MAX_STALL_DEMOTIONS = 3  # consecutive short-lived sessions before cloud demotion
-LOCAL_RECONNECT_HEALTHY_THRESHOLD = 120.0  # seconds a session must survive to reset the stall streak
+LOCAL_RECONNECT_HEALTHY_THRESHOLD = (
+    120.0  # seconds a session must survive to reset the stall streak
+)
 MQTT_WATCHDOG_CHECK_INTERVAL = 30  # seconds between dead-link checks
 MQTT_WATCHDOG_STALE_INTERVAL = 300  # zero-inbound-MQTT time before forcing reconnect
 
