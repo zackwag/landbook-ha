@@ -188,6 +188,29 @@ class TestConnectLocalClient:
         assert result is None
 
     @pytest.mark.asyncio
+    async def test_oserror_falls_back(self, mock_landbook_api):
+        """OSError (e.g. EHOSTUNREACH) must be caught, not just
+        ConnectionError — socket.create_connection raises plain OSError
+        for host-unreachable, network-unreachable, etc."""
+        hass = make_hass()
+        entry = make_config_entry(hass)
+        entry.data[CONF_AUTH_KEY] = "dGVzdGtleQ=="
+        accounts = {"u1": _account()}
+        lock = asyncio.Lock()
+        mock_landbook_api.discover_devices.return_value = [
+            DiscoveredDevice(
+                product_key="pk1", device_key="dk1", ip="10.0.0.5", port=6607, version=1
+            )
+        ]
+        mock_landbook_api.local_client.connect.side_effect = OSError(113, "Host is unreachable")
+
+        result = await _connect_local_client(
+            hass, entry, accounts, lock, "u1", "pk1", "dk1", "tok", "us"
+        )
+
+        assert result is None
+
+    @pytest.mark.asyncio
     async def test_discovery_only_runs_once_per_account(self, mock_landbook_api):
         hass = make_hass()
         entry1 = make_config_entry(hass, entry_id="e1")
@@ -1109,6 +1132,61 @@ class TestAsyncLocalReconnectLoop:
         calls = api.local_client_cls.call_args_list
         assert calls[-1].args[3] == "10.0.0.99"
         api.discover_devices.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_oserror_retries_instead_of_killing_task(self, mock_landbook_api):
+        """Regression test for #54's EHOSTUNREACH report: socket errors that
+        are plain OSError (not ConnectionError) must be caught so the
+        reconnect task keeps retrying instead of dying with an unhandled
+        exception."""
+        hass = make_hass()
+        api = mock_landbook_api
+
+        attempt = {"count": 0}
+        new_client = _make_confirming_client()
+
+        def _connect_side_effect(timeout):
+            attempt["count"] += 1
+            if attempt["count"] <= 1:
+                raise OSError(113, "Host is unreachable")
+
+        new_client.connect = MagicMock(side_effect=_connect_side_effect)
+        api.local_client_cls.return_value = new_client
+
+        cached = DiscoveredDevice(
+            product_key="pk1", device_key="dk1", ip="10.0.0.5", port=6607, version=1
+        )
+        entry_data = {
+            "local_client": None,
+            "local_generation": 1,
+            "local_codes": set(),
+            "local_stall_streak": 0,
+            "local_wire_time": 0.0,
+            "properties": [
+                {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL"},
+            ],
+            "temperature_prop": None,
+        }
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {
+                "u1": {
+                    "local_devices": {("pk1", "dk1"): cached},
+                    "local_clients": {},
+                }
+            },
+            "_client_locks": {"u1": asyncio.Lock()},
+        }
+
+        original_sleep = asyncio.sleep
+        asyncio.sleep = AsyncMock()
+        try:
+            await _async_local_reconnect_loop(hass, "e1", "u1", "pk1", "dk1", "auth123")
+        finally:
+            asyncio.sleep = original_sleep
+
+        assert attempt["count"] == 2
+        assert entry_data["local_client"] is new_client
 
     @pytest.mark.asyncio
     async def test_connect_succeeds_but_no_data_push_retries_instead_of_installing(

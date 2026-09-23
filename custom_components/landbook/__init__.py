@@ -621,7 +621,7 @@ async def _connect_local_client(
     local_client = LandbookLocalClient(pk, dk, auth_key, match.ip, match.port)
     try:
         await hass.async_add_executor_job(local_client.connect, LOCAL_CONNECT_TIMEOUT)
-    except ConnectionError as exc:
+    except OSError as exc:
         _LOGGER.warning(
             "Landbook: local control connect failed for %s (%s) — using cloud MQTT", dk, exc
         )
@@ -966,7 +966,7 @@ async def _async_local_reconnect_loop(
         new_client = LandbookLocalClient(pk, dk, auth_key, ip, port)
         try:
             await hass.async_add_executor_job(new_client.connect, LOCAL_CONNECT_TIMEOUT)
-        except ConnectionError as exc:
+        except OSError as exc:
             _LOGGER.debug(
                 "Landbook: reconnect for %s failed (%s), retrying in %.0fs",
                 dk,
