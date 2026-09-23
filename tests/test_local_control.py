@@ -5,7 +5,7 @@ _make_send_command, and _make_local_state_handler in __init__.py.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from landbook_api.local_client import DiscoveredDevice
@@ -25,6 +25,8 @@ from custom_components.landbook.const import (
     CONF_DEVICE_KEY,
     CONF_PRODUCT_KEY,
     DOMAIN,
+    LOCAL_RECONNECT_HEALTHY_THRESHOLD,
+    LOCAL_RECONNECT_MAX_STALL_DEMOTIONS,
 )
 
 from .conftest import make_config_entry, make_hass, register_entry
@@ -1471,3 +1473,119 @@ class TestThreeFanReconnect:
         create_calls = [c for c in api.local_client_cls.call_args_list if c.args[1] == "dk3"]
         assert create_calls[-1].args[3] == "10.0.0.53"
         api.discover_devices.assert_not_called()
+
+
+class TestStallDemotion:
+    """After N consecutive short-lived local sessions (connect → confirm →
+    wire up → data-stall teardown within LOCAL_RECONNECT_HEALTHY_THRESHOLD),
+    the disconnect handler stops starting the reconnect loop — the device
+    stays on cloud MQTT until the next HA reload."""
+
+    def _make_entry_data(self, *, stall_streak=0, wire_time=0.0, generation=1):
+        return {
+            "local_client": MagicMock(),
+            "local_generation": generation,
+            "local_codes": {"power"},
+            "local_stall_streak": stall_streak,
+            "local_wire_time": wire_time,
+            "online": True,
+            "auth_key": "dGVzdGtleQ==",
+        }
+
+    def test_short_lived_session_increments_streak(self):
+        hass = make_hass()
+        now = 1000.0
+        entry_data = self._make_entry_data(stall_streak=0, wire_time=now - 90)
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {"u1": {"local_clients": {"e1": entry_data["local_client"]}}},
+        }
+
+        with patch("custom_components.landbook.time") as mock_time:
+            mock_time.monotonic.return_value = now
+            handler = _make_local_disconnect_handler(hass, "e1", "u1", "pk1", "dk1", 1)
+            handler()
+
+        assert entry_data["local_stall_streak"] == 1
+
+    def test_long_lived_session_resets_streak(self):
+        hass = make_hass()
+        now = 1000.0
+        entry_data = self._make_entry_data(
+            stall_streak=2, wire_time=now - LOCAL_RECONNECT_HEALTHY_THRESHOLD - 1
+        )
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {"u1": {"local_clients": {"e1": entry_data["local_client"]}}},
+        }
+
+        with patch("custom_components.landbook.time") as mock_time:
+            mock_time.monotonic.return_value = now
+            handler = _make_local_disconnect_handler(hass, "e1", "u1", "pk1", "dk1", 1)
+            handler()
+
+        assert entry_data["local_stall_streak"] == 0
+
+    def test_demotion_after_max_stalls_skips_reconnect_loop(self):
+        hass = make_hass()
+        now = 1000.0
+        entry_data = self._make_entry_data(
+            stall_streak=LOCAL_RECONNECT_MAX_STALL_DEMOTIONS - 1,
+            wire_time=now - 90,
+        )
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {"u1": {"local_clients": {"e1": entry_data["local_client"]}}},
+        }
+
+        with patch("custom_components.landbook.time") as mock_time:
+            mock_time.monotonic.return_value = now
+            handler = _make_local_disconnect_handler(hass, "e1", "u1", "pk1", "dk1", 1)
+            handler()
+
+        assert entry_data["local_stall_streak"] == LOCAL_RECONNECT_MAX_STALL_DEMOTIONS
+        assert entry_data["local_client"] is None
+        hass.loop.call_soon_threadsafe.assert_not_called()
+
+    def test_below_threshold_still_starts_reconnect_loop(self):
+        hass = make_hass()
+        now = 1000.0
+        entry_data = self._make_entry_data(
+            stall_streak=LOCAL_RECONNECT_MAX_STALL_DEMOTIONS - 2,
+            wire_time=now - 90,
+        )
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {"u1": {"local_clients": {"e1": entry_data["local_client"]}}},
+        }
+
+        with patch("custom_components.landbook.time") as mock_time:
+            mock_time.monotonic.return_value = now
+            handler = _make_local_disconnect_handler(hass, "e1", "u1", "pk1", "dk1", 1)
+            handler()
+
+        assert entry_data["local_stall_streak"] == LOCAL_RECONNECT_MAX_STALL_DEMOTIONS - 1
+        hass.loop.call_soon_threadsafe.assert_called_once()
+
+    def test_wire_local_client_records_wire_time(self):
+        hass = make_hass()
+        local_client = MagicMock()
+        entry_data = {
+            "local_client": None,
+            "local_generation": 0,
+            "local_codes": set(),
+            "local_stall_streak": 2,
+            "local_wire_time": 0.0,
+            "properties": [
+                {"code": "power", "id": 1, "name": "Power", "dataType": "BOOL"},
+            ],
+            "temperature_prop": None,
+        }
+        hass.data[DOMAIN] = {
+            "e1": entry_data,
+            "_accounts": {"u1": {"local_clients": {}}},
+        }
+
+        _wire_local_client(hass, "e1", "u1", "pk1", "dk1", local_client)
+
+        assert entry_data["local_wire_time"] > 0.0
