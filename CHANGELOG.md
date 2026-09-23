@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.5](https://github.com/zackwag/landbook-ha/compare/v2.2.4...v2.2.5) (2026-09-23)
+
+
+### Bug Fixes
+
+* catch OSError in local reconnect to survive host-unreachable ([#71](https://github.com/zackwag/landbook-ha/issues/71)) ([517e228](https://github.com/zackwag/landbook-ha/commit/517e228db64c1b6e73f34831bbafa08b0f9723aa))
+* confirm local writes with ack, fall back to cloud on timeout ([#73](https://github.com/zackwag/landbook-ha/issues/73)) ([7610edc](https://github.com/zackwag/landbook-ha/commit/7610edcb02e093073ade1d5ea19acf1d2e793d84))
+
 ## [2.2.4](https://github.com/zackwag/landbook-ha/compare/v2.2.3...v2.2.4) (2026-09-23)
 
 
