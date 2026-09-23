@@ -49,8 +49,10 @@ from .const import (
     LOCAL_RECONNECT_CACHED_TRIES,
     LOCAL_RECONNECT_CONFIRM_POLL,
     LOCAL_RECONNECT_CONFIRM_TIMEOUT,
+    LOCAL_RECONNECT_HEALTHY_THRESHOLD,
     LOCAL_RECONNECT_INITIAL,
     LOCAL_RECONNECT_MAX,
+    LOCAL_RECONNECT_MAX_STALL_DEMOTIONS,
     LOCAL_TEMPERATURE_IDS,
     MQTT_WATCHDOG_CHECK_INTERVAL,
     MQTT_WATCHDOG_STALE_INTERVAL,
@@ -336,6 +338,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "mqtt_client": mqtt_client,
         "local_client": None,
         "local_generation": 0,
+        "local_stall_streak": 0,
+        "local_wire_time": 0.0,
         "properties": properties,
         "device_id": device_id,
         "pk": pk,
@@ -747,11 +751,6 @@ def _make_local_disconnect_handler(
                 entry_data.get("local_generation", 0),
             )
             return
-        _LOGGER.warning(
-            "Landbook: local connection to %s lost unexpectedly — "
-            "falling back to cloud MQTT, will attempt reconnect",
-            dk,
-        )
         entry_data["local_client"] = None
         entry_data["local_codes"] = set()
         accounts = hass.data.get(DOMAIN, {}).get("_accounts", {})
@@ -759,6 +758,27 @@ def _make_local_disconnect_handler(
         if acct is not None:
             acct["local_clients"].pop(entry_id, None)
 
+        wire_time = entry_data.get("local_wire_time", 0.0)
+        if wire_time and (time.monotonic() - wire_time) >= LOCAL_RECONNECT_HEALTHY_THRESHOLD:
+            entry_data["local_stall_streak"] = 0
+        else:
+            entry_data["local_stall_streak"] = entry_data.get("local_stall_streak", 0) + 1
+
+        stall_streak = entry_data.get("local_stall_streak", 0)
+        if stall_streak >= LOCAL_RECONNECT_MAX_STALL_DEMOTIONS:
+            _LOGGER.warning(
+                "Landbook: local connection to %s lost %d consecutive times shortly "
+                "after reconnecting — demoting to cloud MQTT until next reload",
+                dk,
+                stall_streak,
+            )
+            return
+
+        _LOGGER.warning(
+            "Landbook: local connection to %s lost unexpectedly — "
+            "falling back to cloud MQTT, will attempt reconnect",
+            dk,
+        )
         auth_key = entry_data.get("auth_key")
         if auth_key:
             hass.loop.call_soon_threadsafe(
@@ -805,6 +825,7 @@ def _wire_local_client(
     generation = entry_data.get("local_generation", 0) + 1
     entry_data["local_client"] = local_client
     entry_data["local_generation"] = generation
+    entry_data["local_wire_time"] = time.monotonic()
     entry_data["local_codes"] = set(id_to_code.values())
 
     accounts = hass.data.get(DOMAIN, {}).get("_accounts", {})
