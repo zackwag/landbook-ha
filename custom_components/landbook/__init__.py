@@ -652,9 +652,13 @@ def _make_send_command(hass: HomeAssistant, entry_id: str):
                     for p in entry_data["properties"]
                     if p["code"] in props and "id" in p
                 ]
-                if fields:
-                    local_client.write(fields)
+                if fields and local_client.write_and_wait(fields):
                     return
+                if fields:
+                    _LOGGER.warning(
+                        "Landbook: local write to %s not acknowledged, falling back to cloud MQTT",
+                        entry_data.get("dk"),
+                    )
             except Exception as exc:  # noqa: BLE001 - fall back to cloud on any local failure
                 _LOGGER.warning(
                     "Landbook: local write failed for %s (%s), falling back to cloud MQTT",
