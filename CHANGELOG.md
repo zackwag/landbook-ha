@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.4](https://github.com/zackwag/landbook-ha/compare/v2.2.3...v2.2.4) (2026-09-23)
+
+
+### Bug Fixes
+
+* demote to cloud after consecutive short-lived local sessions ([#68](https://github.com/zackwag/landbook-ha/issues/68)) ([265c5e3](https://github.com/zackwag/landbook-ha/commit/265c5e30e21981c0bd60cad1120e336ba6a24f72))
+
 ## [2.2.3](https://github.com/zackwag/landbook-ha/compare/v2.2.2...v2.2.3) (2026-09-22)
 
 
