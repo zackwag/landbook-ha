@@ -153,3 +153,30 @@ class TestUnloadEntry:
 
         assert result is True
         api.local_client.disconnect.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_unload_unsubscribes_mqtt_callback(self, mock_landbook_api):
+        """Each setup registers a per-device MQTT callback. Unload must
+        remove it so a subsequent reload doesn't duplicate messages (#74)."""
+        from custom_components.landbook import async_setup, async_setup_entry, async_unload_entry
+
+        hass = make_hass()
+        api = mock_landbook_api
+        api.refresh_token.return_value = ("tok_v2", "ref_v2")
+
+        entry = make_config_entry(hass, entry_id="e1", uid="u1")
+        register_entry(hass, entry)
+
+        await async_setup(hass, {})
+        await async_setup_entry(hass, entry)
+
+        mqtt_client = hass.data[DOMAIN]["_accounts"]["u1"]["client"]
+        device_id = hass.data[DOMAIN]["e1"]["device_id"]
+
+        hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+        await async_unload_entry(hass, entry)
+
+        mqtt_client.unsubscribe_device.assert_called_once()
+        call_args = mqtt_client.unsubscribe_device.call_args
+        assert call_args[0][0] == device_id
+        assert callable(call_args[0][1])

@@ -438,6 +438,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _LOGGER.warning("onl_ payload for %s had no recognised status key: %s", dk, payload)
 
     mqtt_client.subscribe_device(device_id, _mqtt_callback)
+    domain_data[entry.entry_id]["_mqtt_callback"] = _mqtt_callback
 
     # On (re)connect, request state for ALL devices on this account, except
     # ones a live local-LAN connection is already keeping fresh — asking
@@ -1117,6 +1118,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         uid = entry_data.get("uid")
         accounts = domain_data.get("_accounts", {})
         acct = accounts.get(uid) if uid else None
+
+        mqtt_client = entry_data.get("mqtt_client")
+        mqtt_cb = entry_data.get("_mqtt_callback")
+        if mqtt_client is not None and mqtt_cb is not None:
+            mqtt_client.unsubscribe_device(entry_data.get("device_id", ""), mqtt_cb)
 
         # Local connections are per-device, unlike the shared account MQTT
         # client below — disconnect this entry's own regardless of whether
