@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.6](https://github.com/zackwag/landbook-ha/compare/v2.2.5...v2.2.6) (2026-09-25)
+
+
+### Bug Fixes
+
+* unsubscribe per-device MQTT callback on config entry unload ([#75](https://github.com/zackwag/landbook-ha/issues/75)) ([d7dd027](https://github.com/zackwag/landbook-ha/commit/d7dd027873af2264c27624e21253d5794cede932))
+
 ## [2.2.5](https://github.com/zackwag/landbook-ha/compare/v2.2.4...v2.2.5) (2026-09-23)
 
 
