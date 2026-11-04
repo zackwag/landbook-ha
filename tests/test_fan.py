@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
 from homeassistant.components.fan import FanEntityFeature
 
 from custom_components.landbook.fan import LandbookFan, _suggest_area
@@ -305,8 +306,42 @@ class TestCommands:
 
     async def test_set_percentage_sends_speed(self):
         fan, data = _make_fan(speed_count=4)
+        fan._is_on = True
         await fan.async_set_percentage(75)
         data["send_command"].assert_called_once_with({"speed": 3})
+
+    @pytest.mark.parametrize("percentage,speed", [(20, 1), (40, 2), (60, 3), (80, 4), (100, 5)])
+    async def test_set_percentage_while_off_sends_power_and_speed(self, percentage, speed):
+        fan, data = _make_fan(speed_count=5)
+        await fan.async_set_percentage(percentage)
+        data["send_command"].assert_called_once_with({"power": True, "speed": speed})
+        assert fan.is_on is True
+        assert fan.percentage == percentage
+
+    @pytest.mark.parametrize("is_on", [False, True])
+    @pytest.mark.parametrize("auto_mode", [False, True])
+    async def test_zero_percentage_turns_off(self, is_on, auto_mode):
+        fan, data = _make_fan(preset_modes=["Normal", "Auto"])
+        fan._is_on = is_on
+        fan._current_mode_idx = int(auto_mode)
+        await fan.async_set_percentage(0)
+        data["send_command"].assert_called_once_with({"power": False})
+        assert fan.is_on is False
+
+    async def test_nonzero_percentage_preserves_auto_mode(self):
+        fan, data = _make_fan(preset_modes=["Normal", "Auto"])
+        fan._current_mode_idx = 1
+        await fan.async_set_percentage(60)
+        data["send_command"].assert_not_called()
+        assert fan.is_on is False
+        assert fan.preset_mode == "Auto"
+
+    async def test_decrease_speed_to_zero_turns_off(self):
+        fan, data = _make_fan(speed_count=5)
+        fan._is_on = True
+        await fan.async_decrease_speed()
+        data["send_command"].assert_called_once_with({"power": False})
+        assert fan.is_on is False
 
     async def test_set_preset_mode_sends_mode(self):
         fan, data = _make_fan(preset_modes=["Normal", "Sleep"])

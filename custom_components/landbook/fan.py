@@ -172,7 +172,14 @@ class LandbookFan(FanEntity):
         self.async_write_ha_state()
 
     async def async_set_percentage(self, percentage: int) -> None:
+        # Zero is HA's off command, including when Auto owns the speed.
+        if percentage == 0:
+            await self.async_turn_off()
+            return
         if not self._speed_values or self._is_auto_mode():
+            return
+        if not self.is_on:
+            await self.async_turn_on(percentage=percentage)
             return
         idx = max(
             0,
