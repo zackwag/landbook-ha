@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.7](https://github.com/zackwag/landbook-ha/compare/v2.2.6...v2.2.7) (2026-11-04)
+
+
+### Bug Fixes
+
+* handle power transitions when setting fan percentage ([#78](https://github.com/zackwag/landbook-ha/issues/78)) ([1866d20](https://github.com/zackwag/landbook-ha/commit/1866d204a76ff8860f9d1f23407605384df54688))
+
 ## [2.2.6](https://github.com/zackwag/landbook-ha/compare/v2.2.5...v2.2.6) (2026-09-25)
 
 
