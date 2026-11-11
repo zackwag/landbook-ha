@@ -1,19 +1,25 @@
 version: 2
 updates:
-  - package-ecosystem: github-actions
-    directory: /
-    schedule:
-      interval: weekly
-    groups:
-      actions:
-        patterns:
-          - "*"
-
-  - package-ecosystem: pip
-    directory: /
-    schedule:
-      interval: weekly
-    groups:
-      pip:
-        patterns:
-          - "*"
+- package-ecosystem: github-actions
+  directory: /
+  schedule:
+    interval: weekly
+  groups:
+    actions:
+      patterns:
+      - '*'
+  commit-message:
+    prefix: ci
+    include: scope
+- package-ecosystem: pip
+  directory: /
+  schedule:
+    interval: weekly
+  groups:
+    pip:
+      patterns:
+      - '*'
+  commit-message:
+    prefix: chore
+    prefix-development: build
+    include: scope
