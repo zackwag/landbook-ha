@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.8](https://github.com/zackwag/landbook-ha/compare/v2.2.7...v2.2.8) (2026-11-11)
+
+
+### Miscellaneous Chores
+
+* fix dependabot commit-message prefixes for conventional commits ([#80](https://github.com/zackwag/landbook-ha/issues/80)) ([e382b8e](https://github.com/zackwag/landbook-ha/commit/e382b8ef1778df08df81a26792d8f41ee5b663e8))
+
 ## [2.2.7](https://github.com/zackwag/landbook-ha/compare/v2.2.6...v2.2.7) (2026-11-04)
 
 
