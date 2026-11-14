@@ -18,6 +18,7 @@ from __future__ import annotations
 import threading
 
 import pytest
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from landbook_api import LandbookAuthError
 
 from .conftest import make_config_entry, make_hass, register_entry
@@ -119,6 +120,8 @@ class TestRuntimeRefreshLock:
 
         with pytest.raises(LandbookAuthError, match="rejected"):
             refresher()
+
+        mock_landbook_api.mqtt.halt_reconnects.assert_called_once()
 
     def test_refresh_network_error_propagates(self, mock_landbook_api):
         """A generic exception (network error) should propagate for retry."""
@@ -387,6 +390,66 @@ class TestRuntimeRefreshLock:
         assert second_call_args[1] == "ref_v2", (
             f"Expected refresh token 'ref_v2' from first refresh, got '{second_call_args[1]}'"
         )
+
+
+class TestInitialMqttAuthFailure:
+    """Rejected credentials during initial MQTT setup must start reauth cleanly."""
+
+    @pytest.mark.asyncio
+    async def test_auth_failure_before_account_publish_raises_auth_failed(self, mock_landbook_api):
+        """The first MQTT client can fail before ``_accounts`` has an entry."""
+        from custom_components.landbook import async_setup_entry
+        from custom_components.landbook.const import DOMAIN
+
+        hass = make_hass()
+        entry = make_config_entry(
+            hass,
+            entry_id="initial_auth_failure",
+            uid="u1",
+            bearer_token="expired_access",
+            refresh_token="rejected_refresh",
+        )
+        register_entry(hass, entry)
+        hass.data.setdefault(DOMAIN, {})
+
+        mock_landbook_api.refresh_token.side_effect = LandbookAuthError("Token refresh rejected")
+
+        def fail_connect():
+            refresher = mock_landbook_api.mqtt_cls.call_args.kwargs["token_refresher"]
+            with pytest.raises(LandbookAuthError, match="rejected"):
+                refresher()
+            raise ConnectionError("MQTT connection timed out")
+
+        mock_landbook_api.mqtt.connect.side_effect = fail_connect
+
+        with pytest.raises(ConfigEntryAuthFailed, match="require reauthentication"):
+            await async_setup_entry(hass, entry)
+
+        assert hass.data[DOMAIN]["_reauth_fired_u1"] is True
+        assert "u1" not in hass.data[DOMAIN].get("_accounts", {})
+        mock_landbook_api.mqtt.halt_reconnects.assert_called_once()
+
+        # Home Assistant starts the reauth flow from ConfigEntryAuthFailed;
+        # the threaded callback must not dispatch a duplicate before the
+        # account has a published entry.
+        entry.async_start_reauth.assert_not_called()
+        assert not hass.loop.call_soon_threadsafe.called
+
+    @pytest.mark.asyncio
+    async def test_retry_does_not_create_another_mqtt_client(self, mock_landbook_api):
+        """The account guard must stop retries while reauth is pending."""
+        from custom_components.landbook import async_setup_entry
+        from custom_components.landbook.const import DOMAIN
+
+        hass = make_hass()
+        entry = make_config_entry(hass, entry_id="guarded_retry", uid="u1")
+        register_entry(hass, entry)
+        hass.data.setdefault(DOMAIN, {})["_reauth_fired_u1"] = True
+
+        with pytest.raises(ConfigEntryAuthFailed, match="require reauthentication"):
+            await async_setup_entry(hass, entry)
+
+        mock_landbook_api.mqtt_cls.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
