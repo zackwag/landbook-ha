@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.9](https://github.com/zackwag/landbook-ha/compare/v2.2.8...v2.2.9) (2026-11-16)
+
+
+### Bug Fixes
+
+* Reauth when initial MQTT setup rejects token ([#82](https://github.com/zackwag/landbook-ha/issues/82)) ([1084d99](https://github.com/zackwag/landbook-ha/commit/1084d9933119af09e600577f281499ad51b1c644))
+* trigger reauth when initial MQTT setup rejects token ([1084d99](https://github.com/zackwag/landbook-ha/commit/1084d9933119af09e600577f281499ad51b1c644))
+
 ## [2.2.8](https://github.com/zackwag/landbook-ha/compare/v2.2.7...v2.2.8) (2026-11-11)
 
 
