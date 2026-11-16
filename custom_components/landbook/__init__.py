@@ -11,7 +11,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_time_interval
 from landbook_api import (
@@ -111,6 +111,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     account_tokens = domain_data.setdefault("_account_tokens", {})
     reauth_fired_key = f"_reauth_fired_{uid}"
 
+    # A previous setup attempt may have discovered rejected credentials before
+    # the account was published in ``_accounts``. Do not create another MQTT
+    # client with the same credentials while Home Assistant is waiting for the
+    # reauthentication flow to complete.
+    if domain_data.get(reauth_fired_key):
+        raise ConfigEntryAuthFailed("Landbook credentials require reauthentication")
+
     async with setup_lock:
         # A sibling entry may have refreshed while we waited — prefer the
         # in-memory store (updated synchronously under the lock) over config
@@ -201,6 +208,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         client_lock = client_locks[uid] = asyncio.Lock()
 
     async with client_lock:
+        # A sibling entry may have detected rejected credentials while this
+        # entry waited for the account-wide client lock.
+        if domain_data.get(reauth_fired_key):
+            raise ConfigEntryAuthFailed("Landbook credentials require reauthentication")
+
         if uid not in accounts:
             # First device for this account — create the shared MQTT client
             _refresh_lock = threading.Lock()
@@ -221,8 +233,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         )
                     except LandbookAuthError as exc:
                         _LOGGER.warning("Token rejected for %s, triggering reauth: %s", uid, exc)
-                        if accounts.get(uid, {}).get("client"):
-                            accounts[uid]["client"].halt_reconnects()
+                        # Setup can fail before this client is published in
+                        # ``accounts``. Halt the client directly so rejected
+                        # credentials cannot leave its reconnect loop running.
+                        mqtt_client.halt_reconnects()
                         if not domain_data.get(reauth_fired_key):
                             domain_data[reauth_fired_key] = True
                             entries = list(accounts.get(uid, {}).get("entries", set()))
@@ -259,6 +273,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             try:
                 await hass.async_add_executor_job(mqtt_client.connect)
             except ConnectionError as exc:
+                if domain_data.get(reauth_fired_key):
+                    raise ConfigEntryAuthFailed(
+                        "Landbook credentials require reauthentication"
+                    ) from exc
                 raise ConfigEntryNotReady(f"MQTT connection failed: {exc}") from exc
 
             async def _proactive_token_refresh(_now: object = None) -> None:
