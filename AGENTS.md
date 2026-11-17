@@ -19,9 +19,11 @@ In particular: **never subclass `LandbookMQTTClient` to add behavior, and
 never reach into its private attributes** (`_wire_lock`, `_client`,
 `_connected`, `_reconnect_timer`, `_deferred_writes`, etc.) from this repo.
 If the integration needs the client to behave differently, that is a
-landbook-api change — open a PR there, get it released, then bump the
-exact `landbook-api==X.Y.Z` pin in `manifest.json` here (Home Assistant
-won't install a newer release otherwise).
+landbook-api change — open a PR there and get it released. The
+`Bump landbook-api` workflow then opens a PR here bumping the exact
+`landbook-api==X.Y.Z` pin in `manifest.json` (Home Assistant won't install
+a newer release otherwise); push the integration-side changes to that
+branch.
 
 ### Worked example (why this rule exists)
 

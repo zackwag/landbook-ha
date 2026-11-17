@@ -1,0 +1,29 @@
+name: Bump landbook-api
+
+on:
+  schedule:
+    - cron: "17 13 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: bump-landbook-api
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      # RELEASE_PLEASE_TOKEN rather than GITHUB_TOKEN: a PR opened with
+      # GITHUB_TOKEN doesn't trigger workflows, so the bump would never be
+      # tested.
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+
+      - name: Open a bump PR if PyPI has a newer release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: .github/scripts/bump-landbook-api.sh
