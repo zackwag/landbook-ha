@@ -23,7 +23,9 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install pytest pytest-asyncio pytest-cov
-          pip install homeassistant landbook-api
+          pip install homeassistant
+          # Test against exactly what the manifest pins, not the newest release.
+          pip install $(jq -r '.requirements[]' custom_components/landbook/manifest.json)
 
       - name: Run tests
         run: pytest tests/ -v --tb=short

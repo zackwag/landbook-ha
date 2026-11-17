@@ -51,16 +51,6 @@ Python 3.12 and 3.13, plus HACS/hassfest validation.
 
 ## Versioning and releases
 
-Three files must move together:
+Releases are cut by [release-please](https://github.com/googleapis/release-please) from Conventional Commit PR titles. Don't hand-edit `version` in `manifest.json` or `CHANGELOG.md`, and don't touch `chore(main): release ...` PRs. Merging the release PR tags `vX.Y.Z` and creates the GitHub Release that HACS installs from.
 
-- `custom_components/landbook/manifest.json` — `version`, and `requirements`
-  (the `landbook-api>=X.Y.Z` pin — bump this whenever a fix or feature you're
-  depending on landed in landbook-api instead of here)
-- `.bumpversion.cfg` — `current_version`
-- `CHANGELOG.md` — a new `## [X.Y.Z] - YYYY-MM-DD` entry; the release
-  workflow extracts this section verbatim as the GitHub Release body
-
-A merged PR does not ship to HACS users by itself — a `vX.Y.Z` git tag on
-`main` triggers `.github/workflows/release.yml`, which runs tests and
-creates the GitHub Release. Push the tag (or use the workflow's
-`workflow_dispatch` input) once the version-bump PR is merged.
+`manifest.json` pins an exact `landbook-api==X.Y.Z`. Home Assistant only installs a requirement when the installed version doesn't satisfy it, so this pin is the only way a landbook-api release reaches users, and it guarantees everyone runs the pair CI tested (CI installs exactly what the manifest pins). When you need a landbook-api release, bump the pin in a `fix(deps):` or `feat(deps):` PR so it cuts a landbook-ha release.
