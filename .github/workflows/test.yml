@@ -27,7 +27,10 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install pytest pytest-asyncio homeassistant landbook-api
+        # Test against exactly what the manifest pins, not the newest release.
+        run: |
+          pip install pytest pytest-asyncio homeassistant
+          pip install $(jq -r '.requirements[]' custom_components/landbook/manifest.json)
 
       - name: Run tests
         run: pytest

@@ -20,7 +20,8 @@ never reach into its private attributes** (`_wire_lock`, `_client`,
 `_connected`, `_reconnect_timer`, `_deferred_writes`, etc.) from this repo.
 If the integration needs the client to behave differently, that is a
 landbook-api change — open a PR there, get it released, then bump the
-version requirement here.
+exact `landbook-api==X.Y.Z` pin in `manifest.json` here (Home Assistant
+won't install a newer release otherwise).
 
 ### Worked example (why this rule exists)
 
@@ -50,8 +51,8 @@ config, or entity state (→ here) before writing code.
 - If your change depends on new landbook-api behavior that isn't released
   yet, install it locally with `pip install -e /path/to/landbook-api` to
   test against it, and call out in the PR description that it depends on
-  an unreleased landbook-api version plus the `requirements` bump needed
-  once it ships.
+  an unreleased landbook-api version plus the pin bump needed once it
+  ships.
 
 ## Releases
 
