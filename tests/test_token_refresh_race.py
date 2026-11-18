@@ -547,3 +547,55 @@ class TestSetupTimeLock:
         assert api.async_refresh_token.call_count <= 1, (
             f"Expected at most 1 refresh call, got {api.async_refresh_token.call_count}"
         )
+
+
+# ---------------------------------------------------------------------------
+# MQTT watchdog vs. pending reauth
+# ---------------------------------------------------------------------------
+
+
+class TestWatchdogReauthGuard:
+    """reconnect() re-enables the reconnect loop halt_reconnects() stopped, so
+    the watchdog must not call it on an account whose credentials were
+    rejected."""
+
+    async def _setup_and_get_watchdog(self, hass, entry):
+        from unittest.mock import patch
+
+        from custom_components.landbook import async_setup_entry
+        from custom_components.landbook.const import MQTT_WATCHDOG_CHECK_INTERVAL
+
+        callbacks = {}
+
+        def _track(_hass, action, interval):
+            callbacks[interval.total_seconds()] = action
+            return lambda: None
+
+        with patch("custom_components.landbook.async_track_time_interval", side_effect=_track):
+            await async_setup_entry(hass, entry)
+        return callbacks[MQTT_WATCHDOG_CHECK_INTERVAL]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("reauth_pending", [False, True])
+    async def test_stale_link_reconnects_only_without_pending_reauth(
+        self, mock_landbook_api, reauth_pending
+    ):
+        import time
+
+        from custom_components.landbook.const import DOMAIN, MQTT_WATCHDOG_STALE_INTERVAL
+
+        hass = make_hass()
+        entry = make_config_entry(hass, entry_id="watchdog", uid="u1")
+        register_entry(hass, entry)
+        watchdog = await self._setup_and_get_watchdog(hass, entry)
+
+        # Relative to now: monotonic() counts from boot, so a fixed 0.0 isn't
+        # stale on a freshly booted CI runner.
+        stale = time.monotonic() - MQTT_WATCHDOG_STALE_INTERVAL - 1
+        hass.data[DOMAIN]["_accounts"]["u1"]["last_activity"] = stale
+        if reauth_pending:
+            hass.data[DOMAIN]["_reauth_fired_u1"] = True
+
+        await watchdog()
+
+        assert mock_landbook_api.mqtt.reconnect.called is not reauth_pending

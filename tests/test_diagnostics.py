@@ -34,7 +34,7 @@ def hass_with_entry():
     entry.options = {"temperature_unit": "°F"}
 
     mqtt_client = MagicMock()
-    mqtt_client._connected = True
+    mqtt_client.is_connected = True
 
     hass.data = {
         DOMAIN: {

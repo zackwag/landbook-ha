@@ -57,7 +57,7 @@ async def async_get_config_entry_diagnostics(
         },
         "current_state": dict(entry_data.get("state", {})),
         "mqtt": {
-            "connected": mqtt_client._connected if mqtt_client else None,
+            "connected": mqtt_client.is_connected if mqtt_client else None,
             "shared_devices": list(account.get("entries", [])),
         },
     }
