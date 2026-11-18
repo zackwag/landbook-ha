@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.11](https://github.com/zackwag/landbook-ha/compare/v2.2.10...v2.2.11) (2026-11-18)
+
+
+### Bug Fixes
+
+* **deps:** bump landbook-api to 0.10.0 ([#88](https://github.com/zackwag/landbook-ha/issues/88)) ([ebe9b66](https://github.com/zackwag/landbook-ha/commit/ebe9b66600b7b02391a0189a942e7c033486fa12))
+* **deps:** bump landbook-api to 0.10.1 ([#90](https://github.com/zackwag/landbook-ha/issues/90)) ([2c74d06](https://github.com/zackwag/landbook-ha/commit/2c74d06145013deb8e3a4982aecc965b483a15e1))
+
 ## [2.2.10](https://github.com/zackwag/landbook-ha/compare/v2.2.9...v2.2.10) (2026-11-18)
 
 
