@@ -301,6 +301,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 try:
                     if not _account_watchdog_enabled():
                         return
+                    # reconnect() re-enables the reconnect loop that
+                    # halt_reconnects() stopped, so leave a rejected account
+                    # alone until reauth replaces the client.
+                    if domain_data.get(reauth_fired_key):
+                        return
                     acct = accounts.get(uid)
                     last = acct.get("last_activity") if acct else None
                     if last is None:
@@ -473,7 +478,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     edata["device_id"], edata["pk"], edata["dk"], edata["all_codes"]
                 )
 
-    mqtt_client._on_reconnect = _request_all_states
+    mqtt_client.on_connect = _request_all_states
     if local_client is None:
         # Same rationale as _request_all_states above — pointless and
         # failure-prone to ask cloud to read a device local control is

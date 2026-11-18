@@ -770,7 +770,7 @@ class TestMqttCallbackLocalFirst:
 
 class TestRequestAllStates:
     """The account-level reconnect handler (_request_all_states, wired as
-    mqtt_client._on_reconnect) re-seeds state over cloud MQTT for every
+    mqtt_client.on_connect) re-seeds state over cloud MQTT for every
     device on the account — except ones a live local-LAN connection is
     already keeping fresh, which would otherwise get a pointless cloud
     read that reliably fails its SENDACK on real hardware."""
@@ -803,7 +803,7 @@ class TestRequestAllStates:
         assert hass.data[DOMAIN]["e_cloud"]["local_client"] is None
 
         api.mqtt.send_read.reset_mock()
-        api.mqtt._on_reconnect()
+        api.mqtt.on_connect()
 
         called_device_ids = {c.args[0] for c in api.mqtt.send_read.call_args_list}
         assert called_device_ids == {"qdpk1dk2"}
