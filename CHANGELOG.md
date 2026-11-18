@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.10](https://github.com/zackwag/landbook-ha/compare/v2.2.9...v2.2.10) (2026-11-18)
+
+
+### Bug Fixes
+
+* **deps:** pin landbook-api to an exact version ([#86](https://github.com/zackwag/landbook-ha/issues/86)) ([e73606f](https://github.com/zackwag/landbook-ha/commit/e73606f7769a79eb685ddf90a0adb070fe17e239))
+
 ## [2.2.9](https://github.com/zackwag/landbook-ha/compare/v2.2.8...v2.2.9) (2026-11-16)
 
 
