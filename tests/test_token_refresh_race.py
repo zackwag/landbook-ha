@@ -428,6 +428,7 @@ class TestInitialMqttAuthFailure:
         assert hass.data[DOMAIN]["_reauth_fired_u1"] is True
         assert "u1" not in hass.data[DOMAIN].get("_accounts", {})
         mock_landbook_api.mqtt.halt_reconnects.assert_called_once()
+        mock_landbook_api.mqtt.disconnect.assert_called_once()
 
         # Home Assistant starts the reauth flow from ConfigEntryAuthFailed;
         # the threaded callback must not dispatch a duplicate before the

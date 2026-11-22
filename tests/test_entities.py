@@ -5,7 +5,7 @@ Covers light, switch, number, sensor, and select entities.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -19,6 +19,7 @@ from custom_components.landbook.switch import LandbookSwitch
 def _patch_entity(entity):
     """Set hass and stub async_write_ha_state so the entity works outside HA."""
     entity.hass = MagicMock()
+    entity.hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *args: fn(*args))
     entity.async_write_ha_state = MagicMock()
     return entity
 

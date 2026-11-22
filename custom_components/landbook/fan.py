@@ -161,14 +161,14 @@ class LandbookFan(FanEntity):
             self._current_speed_idx = idx
 
         self._is_on = True
-        self._send(props)
+        await self._send(props)
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         if not self._power_prop:
             return
         self._is_on = False
-        self._send({self._power_prop["code"]: False})
+        await self._send({self._power_prop["code"]: False})
         self.async_write_ha_state()
 
     async def async_set_percentage(self, percentage: int) -> None:
@@ -189,7 +189,7 @@ class LandbookFan(FanEntity):
             ),
         )
         self._current_speed_idx = idx
-        self._send({self._speed_prop["code"]: self._speed_values[idx]})
+        await self._send({self._speed_prop["code"]: self._speed_values[idx]})
         self.async_write_ha_state()
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
@@ -197,14 +197,14 @@ class LandbookFan(FanEntity):
             return
         idx = self._preset_modes.index(preset_mode)
         self._current_mode_idx = idx
-        self._send({self._mode_prop["code"]: self._mode_values[idx]})
+        await self._send({self._mode_prop["code"]: self._mode_values[idx]})
         self.async_write_ha_state()
 
     async def async_oscillate(self, oscillating: bool) -> None:
         if not self._oscillation_prop:
             return
         self._oscillating = oscillating
-        self._send({self._oscillation_prop["code"]: oscillating})
+        await self._send({self._oscillation_prop["code"]: oscillating})
         self.async_write_ha_state()
 
     # ------------------------------------------------------------------
@@ -280,8 +280,8 @@ class LandbookFan(FanEntity):
             return False
         return self._preset_modes[self._current_mode_idx].lower() == "auto"
 
-    def _send(self, props: dict) -> None:
-        self._data["send_command"](props)
+    async def _send(self, props: dict) -> None:
+        await self.hass.async_add_executor_job(self._data["send_command"], props)
 
 
 def _suggest_area(device_name: str, product_name: str) -> str | None:

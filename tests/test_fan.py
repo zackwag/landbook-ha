@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+import asyncio
+import threading
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from homeassistant.components.fan import FanEntityFeature
@@ -12,6 +14,18 @@ from custom_components.landbook.fan import LandbookFan, _suggest_area
 # ---------------------------------------------------------------------------
 # _suggest_area (pure function)
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fan_command_runs_outside_event_loop():
+    fan, data = _make_fan()
+    loop_thread = threading.get_ident()
+    command_threads = []
+    data["send_command"].side_effect = lambda props: command_threads.append(threading.get_ident())
+    fan.hass.async_add_executor_job = asyncio.to_thread
+    await fan.async_turn_on()
+    assert len(command_threads) == 1
+    assert command_threads[0] != loop_thread
 
 
 class TestSuggestArea:
@@ -92,6 +106,7 @@ def _make_fan(
     }
 
     hass = MagicMock()
+    hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *args: fn(*args))
     fan = LandbookFan(hass, entry, data)
     fan.hass = hass
     fan.async_write_ha_state = MagicMock()

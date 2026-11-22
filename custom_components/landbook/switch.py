@@ -95,12 +95,12 @@ class LandbookSwitch(SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         self._attr_is_on = True
-        self._data["send_command"]({self._code: True})
+        await self.hass.async_add_executor_job(self._data["send_command"], {self._code: True})
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         self._attr_is_on = False
-        self._data["send_command"]({self._code: False})
+        await self.hass.async_add_executor_job(self._data["send_command"], {self._code: False})
         self.async_write_ha_state()
 
     async def async_added_to_hass(self) -> None:

@@ -270,14 +270,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 mqtt_host=region_cfg["mqtt_host"],
                 token_refresher=_token_refresher,
             )
+            connect_future = asyncio.ensure_future(hass.async_add_executor_job(mqtt_client.connect))
             try:
-                await hass.async_add_executor_job(mqtt_client.connect)
+                await asyncio.shield(connect_future)
+            except asyncio.CancelledError:
+                # Cancelling the await cannot stop an executor thread. Wait
+                # for the connection attempt before disposing of its client.
+                try:
+                    await connect_future
+                except Exception as exc:  # noqa: BLE001 - cleanup follows either outcome
+                    _LOGGER.debug("MQTT connect failed after setup was cancelled: %s", exc)
+                await hass.async_add_executor_job(mqtt_client.disconnect)
+                raise
             except ConnectionError as exc:
+                await hass.async_add_executor_job(mqtt_client.disconnect)
                 if domain_data.get(reauth_fired_key):
                     raise ConfigEntryAuthFailed(
                         "Landbook credentials require reauthentication"
                     ) from exc
                 raise ConfigEntryNotReady(f"MQTT connection failed: {exc}") from exc
+            except Exception:
+                await hass.async_add_executor_job(mqtt_client.disconnect)
+                raise
 
             async def _proactive_token_refresh(_now: object = None) -> None:
                 try:
@@ -676,11 +690,11 @@ def _make_send_command(hass: HomeAssistant, entry_id: str):
                     for p in entry_data["properties"]
                     if p["code"] in props and "id" in p
                 ]
-                if fields and local_client.write_and_wait(fields):
+                if fields and local_client.write_and_confirm(fields):
                     return
                 if fields:
                     _LOGGER.warning(
-                        "Landbook: local write to %s not acknowledged, falling back to cloud MQTT",
+                        "Landbook: local write to %s not confirmed by fresh state, falling back to cloud MQTT",
                         entry_data.get("dk"),
                     )
             except Exception as exc:  # noqa: BLE001 - fall back to cloud on any local failure
@@ -796,11 +810,10 @@ def _make_local_disconnect_handler(
         if stall_streak >= LOCAL_RECONNECT_MAX_STALL_DEMOTIONS:
             _LOGGER.warning(
                 "Landbook: local connection to %s lost %d consecutive times shortly "
-                "after reconnecting — demoting to cloud MQTT until next reload",
+                "after reconnecting — using cloud MQTT during local retry cooldown",
                 dk,
                 stall_streak,
             )
-            return
 
         _LOGGER.warning(
             "Landbook: local connection to %s lost unexpectedly — "
@@ -939,7 +952,12 @@ async def _async_local_reconnect_loop(
     exits), entry unload (entry_data gone), or when a newer generation
     takes over.
     """
-    delay = LOCAL_RECONNECT_INITIAL
+    entry_data = hass.data.get(DOMAIN, {}).get(entry_id, {})
+    delay = (
+        LOCAL_RECONNECT_MAX
+        if entry_data.get("local_stall_streak", 0) >= LOCAL_RECONNECT_MAX_STALL_DEMOTIONS
+        else LOCAL_RECONNECT_INITIAL
+    )
     cached_failures = 0
 
     while True:
