@@ -10,7 +10,13 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import SIGNAL_STRENGTH_DECIBELS_MILLIWATT, UnitOfTemperature
+from homeassistant.const import (
+    PERCENTAGE,
+    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+    UnitOfPower,
+    UnitOfTemperature,
+    UnitOfTime,
+)
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -47,6 +53,48 @@ async def async_setup_entry(
     )
     if signal_enabled:
         entities.append(LandbookSignalSensor(hass, entry, data))
+
+    telemetry = {
+        "battery_percentage": {
+            "name": "Battery Level",
+            "unit": PERCENTAGE,
+            "device_class": SensorDeviceClass.BATTERY,
+        },
+        "total_input_power": {
+            "name": "Total Input Power",
+            "unit": UnitOfPower.WATT,
+            "device_class": SensorDeviceClass.POWER,
+        },
+        "total_output_power": {
+            "name": "Total Output Power",
+            "unit": UnitOfPower.WATT,
+            "device_class": SensorDeviceClass.POWER,
+        },
+        "ac_input": {
+            "name": "AC Input Power",
+            "unit": UnitOfPower.WATT,
+            "device_class": SensorDeviceClass.POWER,
+        },
+        "dc_input": {
+            "name": "DC Input Power",
+            "unit": UnitOfPower.WATT,
+            "device_class": SensorDeviceClass.POWER,
+        },
+        "remain_charging_time": {
+            "name": "Remaining Charging Time",
+            "unit": UnitOfTime.SECONDS,
+            "device_class": SensorDeviceClass.DURATION,
+        },
+        "remain_time": {
+            "name": "Remaining Runtime",
+            "unit": UnitOfTime.SECONDS,
+            "device_class": SensorDeviceClass.DURATION,
+        },
+    }
+    entities.extend(
+        LandbookTelemetrySensor(entry, data, code, config)
+        for code, config in telemetry.items()
+    )
 
     if entities:
         async_add_entities(entities, update_before_add=False)
@@ -187,4 +235,70 @@ class LandbookSignalSensor(SensorEntity):
         raw = self._data.get("signal_strength")
         if raw is not None:
             self._attr_native_value = int(raw)
+            self.async_write_ha_state()
+
+
+class LandbookTelemetrySensor(SensorEntity):
+    """Generic sensor for Landbook power station telemetry."""
+
+    _attr_should_poll = False
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        entry: ConfigEntry,
+        data: dict,
+        code: str,
+        config: dict,
+    ) -> None:
+        self._entry = entry
+        self._data = data
+        self._code = code
+        self._attr_unique_id = f"{entry.entry_id}_{code}"
+        self._attr_name = f"{entry.data[CONF_DEVICE_NAME]} {config['name']}"
+        self._attr_native_unit_of_measurement = config["unit"]
+        self._attr_device_class = config["device_class"]
+        self._attr_native_value: float | None = None
+
+        device_name: str = entry.data[CONF_DEVICE_NAME]
+        product_name: str = entry.data.get(CONF_PRODUCT_NAME, "")
+        fw_version: str | None = entry.data.get(CONF_FW_VERSION)
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=device_name,
+            manufacturer="Landbook",
+            model=product_name or None,
+            sw_version=fw_version,
+        )
+
+    @property
+    def available(self) -> bool:
+        return self._data.get("online", True)
+
+    async def async_added_to_hass(self) -> None:
+        self._update_value()
+        self.async_on_remove(
+            self.hass.bus.async_listen(
+                f"{DOMAIN}_state_update_{self._entry.entry_id}",
+                self._handle_state_update,
+            )
+        )
+
+    def _update_value(self) -> bool:
+        raw = self._data["state"].get(self._code)
+        if raw is None:
+            return False
+        try:
+            self._attr_native_value = float(raw)
+        except (ValueError, TypeError):
+            _LOGGER.warning("Unexpected telemetry value for %s: %r", self._code, raw)
+            return False
+        return True
+
+    @callback
+    def _handle_state_update(self, event: Event) -> None:
+        changed: set[str] = event.data.get("changed_keys", set()) if event else set()
+        if changed and self._code not in changed:
+            return
+        if self._update_value():
             self.async_write_ha_state()
