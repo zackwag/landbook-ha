@@ -48,7 +48,13 @@ LOCAL_RECONNECT_CACHED_TRIES = 3  # attempts on cached IP before fresh discovery
 # unconfirmed reconnect is treated as a failed attempt for backoff purposes.
 LOCAL_RECONNECT_CONFIRM_TIMEOUT = 5.0  # seconds to wait for a post-reconnect data push
 LOCAL_RECONNECT_CONFIRM_POLL = 0.1  # seconds between checks while waiting
-LOCAL_RECONNECT_MAX_STALL_DEMOTIONS = 3  # short-lived sessions before the longer retry cooldown
+
+# Fresh property confirmation has only been validated on OmniBreeze hardware.
+LOCAL_WRITE_CONFIRM_PRODUCTS = frozenset({"p11vkW"})
+LOCAL_WRITE_CONFIRM_TIMEOUT = 2.0
+LOCAL_RECONNECT_STALL_COOLDOWN_THRESHOLD = (
+    3  # short-lived sessions before the longer retry cooldown
+)
 LOCAL_RECONNECT_HEALTHY_THRESHOLD = (
     120.0  # seconds a session must survive to reset the stall streak
 )

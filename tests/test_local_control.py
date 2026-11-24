@@ -28,7 +28,7 @@ from custom_components.landbook.const import (
     LOCAL_RECONNECT_HEALTHY_THRESHOLD,
     LOCAL_RECONNECT_INITIAL,
     LOCAL_RECONNECT_MAX,
-    LOCAL_RECONNECT_MAX_STALL_DEMOTIONS,
+    LOCAL_RECONNECT_STALL_COOLDOWN_THRESHOLD,
 )
 
 from .conftest import make_config_entry, make_hass, register_entry
@@ -287,12 +287,14 @@ class TestMakeSendCommand:
         local_client = MagicMock()
         local_client.write_and_confirm.return_value = True
         entry_data = self._entry_data(local_client=local_client)
+        entry_data["pk"] = "p11vkW"
         hass.data[DOMAIN] = {"e1": entry_data}
 
         send_command = _make_send_command(hass, "e1")
         send_command({"power": True, "speed": 3})
 
         local_client.write_and_confirm.assert_called_once()
+        assert local_client.write_and_confirm.call_args.kwargs == {"timeout": 2.0}
         fields = local_client.write_and_confirm.call_args[0][0]
         # Bool fields encode their value in the TTLV *type*, not a value
         # byte (see local_protocol.field_for_property) — the power field's
@@ -308,14 +310,16 @@ class TestMakeSendCommand:
         local_client = MagicMock()
         local_client.write_and_confirm.return_value = False
         entry_data = self._entry_data(local_client=local_client)
+        entry_data["pk"] = "p11vkW"
         hass.data[DOMAIN] = {"e1": entry_data}
 
         send_command = _make_send_command(hass, "e1")
         send_command({"power": False})
 
         local_client.write_and_confirm.assert_called_once()
+        assert local_client.write_and_confirm.call_args.kwargs == {"timeout": 2.0}
         entry_data["mqtt_client"].send_write.assert_called_once_with(
-            "qdpk1dk1", "pk1", "dk1", {"power": False}
+            "qdpk1dk1", "p11vkW", "dk1", {"power": False}
         )
 
     def test_local_write_failure_falls_back_to_cloud(self):
@@ -323,13 +327,14 @@ class TestMakeSendCommand:
         local_client = MagicMock()
         local_client.write_and_confirm.side_effect = OSError("connection reset")
         entry_data = self._entry_data(local_client=local_client)
+        entry_data["pk"] = "p11vkW"
         hass.data[DOMAIN] = {"e1": entry_data}
 
         send_command = _make_send_command(hass, "e1")
         send_command({"power": False})
 
         entry_data["mqtt_client"].send_write.assert_called_once_with(
-            "qdpk1dk1", "pk1", "dk1", {"power": False}
+            "qdpk1dk1", "p11vkW", "dk1", {"power": False}
         )
 
     def test_prop_without_id_skipped_for_local_falls_back_to_cloud(self):
@@ -346,6 +351,20 @@ class TestMakeSendCommand:
         entry_data["mqtt_client"].send_write.assert_called_once_with(
             "qdpk1dk1", "pk1", "dk1", {"power": True}
         )
+
+    @pytest.mark.parametrize("acknowledged", [True, False])
+    def test_untested_product_keeps_ack_path(self, acknowledged):
+        hass = make_hass()
+        local_client = MagicMock()
+        local_client.write_and_wait.return_value = acknowledged
+        entry_data = self._entry_data(local_client=local_client)
+        hass.data[DOMAIN] = {"e1": entry_data}
+
+        _make_send_command(hass, "e1")({"power": True})
+
+        local_client.write_and_wait.assert_called_once()
+        local_client.write_and_confirm.assert_not_called()
+        assert entry_data["mqtt_client"].send_write.call_count == (0 if acknowledged else 1)
 
     def test_missing_entry_data_is_a_noop(self):
         hass = make_hass()
@@ -383,9 +402,9 @@ class TestSetupEntryLocalControl:
         entry_data = hass.data[DOMAIN]["e1"]
         assert entry_data["local_client"] is api.local_client
 
-        api.local_client.write_and_confirm.return_value = True
+        api.local_client.write_and_wait.return_value = True
         entry_data["send_command"]({"power": True})
-        api.local_client.write_and_confirm.assert_called_once()
+        api.local_client.write_and_wait.assert_called_once()
         api.mqtt.send_write.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1017,7 +1036,7 @@ class TestWireLocalClient:
 
 class TestAsyncLocalReconnectLoop:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("stalls", [0, LOCAL_RECONNECT_MAX_STALL_DEMOTIONS])
+    @pytest.mark.parametrize("stalls", [0, LOCAL_RECONNECT_STALL_COOLDOWN_THRESHOLD])
     async def test_reconnects_on_cached_ip(self, mock_landbook_api, stalls):
         hass = make_hass()
         api = mock_landbook_api
@@ -1577,7 +1596,7 @@ class TestThreeFanReconnect:
         api.discover_devices.assert_not_called()
 
 
-class TestStallDemotion:
+class TestStallCooldown:
     """After N consecutive short-lived local sessions (connect → confirm →
     wire up → data-stall teardown within LOCAL_RECONNECT_HEALTHY_THRESHOLD),
     the disconnect handler keeps recovery scheduled with a longer cooldown."""
@@ -1627,11 +1646,11 @@ class TestStallDemotion:
 
         assert entry_data["local_stall_streak"] == 0
 
-    def test_repeated_stalls_still_schedule_recovery(self):
+    def test_repeated_stalls_still_schedule_recovery(self, caplog):
         hass = make_hass()
         now = 1000.0
         entry_data = self._make_entry_data(
-            stall_streak=LOCAL_RECONNECT_MAX_STALL_DEMOTIONS - 1,
+            stall_streak=LOCAL_RECONNECT_STALL_COOLDOWN_THRESHOLD - 1,
             wire_time=now - 90,
         )
         hass.data[DOMAIN] = {
@@ -1644,7 +1663,10 @@ class TestStallDemotion:
             handler = _make_local_disconnect_handler(hass, "e1", "u1", "pk1", "dk1", 1)
             handler()
 
-        assert entry_data["local_stall_streak"] == LOCAL_RECONNECT_MAX_STALL_DEMOTIONS
+        warnings = [record for record in caplog.records if record.levelname == "WARNING"]
+        assert len(warnings) == 1
+        assert "retry cooldown" in warnings[0].message
+        assert entry_data["local_stall_streak"] == LOCAL_RECONNECT_STALL_COOLDOWN_THRESHOLD
         assert entry_data["local_client"] is None
         hass.loop.call_soon_threadsafe.assert_called_once()
 
@@ -1652,7 +1674,7 @@ class TestStallDemotion:
         hass = make_hass()
         now = 1000.0
         entry_data = self._make_entry_data(
-            stall_streak=LOCAL_RECONNECT_MAX_STALL_DEMOTIONS - 2,
+            stall_streak=LOCAL_RECONNECT_STALL_COOLDOWN_THRESHOLD - 2,
             wire_time=now - 90,
         )
         hass.data[DOMAIN] = {
@@ -1665,7 +1687,7 @@ class TestStallDemotion:
             handler = _make_local_disconnect_handler(hass, "e1", "u1", "pk1", "dk1", 1)
             handler()
 
-        assert entry_data["local_stall_streak"] == LOCAL_RECONNECT_MAX_STALL_DEMOTIONS - 1
+        assert entry_data["local_stall_streak"] == LOCAL_RECONNECT_STALL_COOLDOWN_THRESHOLD - 1
         hass.loop.call_soon_threadsafe.assert_called_once()
 
     def test_wire_local_client_records_wire_time(self):

@@ -139,7 +139,12 @@ def make_hass():
     hass.bus = MagicMock()
     hass.bus.async_fire = MagicMock()
 
-    hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: fn(*a))
+    async def _executor_job(fn, *args):
+        return fn(*args)
+
+    hass.async_add_executor_job = MagicMock(
+        side_effect=lambda fn, *args: asyncio.ensure_future(_executor_job(fn, *args))
+    )
     hass.async_create_task = MagicMock(side_effect=lambda coro: asyncio.ensure_future(coro))
 
     hass._entries_by_id = entries_by_id
