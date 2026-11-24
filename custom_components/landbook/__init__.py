@@ -41,6 +41,7 @@ from .const import (
     CONF_SIGNAL_STRENGTH,
     CONF_TSL_CACHE,
     CONF_UID,
+    DEFAULT_PLATFORMS,
     DISPLAY_LIGHT_HINTS,
     DOMAIN,
     LOCAL_CONNECT_TIMEOUT,
@@ -59,14 +60,13 @@ from .const import (
     OSCILLATION_NAME_HINTS,
     POWER_SORT_ORDER,
     PROACTIVE_TOKEN_REFRESH_INTERVAL,
+    PRODUCT_PLATFORMS,
     SIGNAL_STRENGTH_POLL_INTERVAL,
     SPEED_NAME_HINTS,
     TEMPERATURE_NAME_HINTS,
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-PLATFORMS = ["fan", "light", "number", "select", "sensor", "switch"]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -546,7 +546,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Start signal strength polling if the option is enabled
     _setup_signal_polling(hass, entry, bearer_token, pk, dk, region)
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    platforms = PRODUCT_PLATFORMS.get(pk, DEFAULT_PLATFORMS)
+    domain_data[entry.entry_id]["platforms"] = platforms
+    await hass.config_entries.async_forward_entry_setups(entry, platforms)
 
     # Reload when options change so temperature unit takes effect immediately
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
@@ -1134,7 +1136,9 @@ async def _async_persist_token_for_account(
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    platforms = entry_data.get("platforms", DEFAULT_PLATFORMS)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, platforms)
     if unload_ok:
         domain_data = hass.data.get(DOMAIN, {})
         entry_data = domain_data.pop(entry.entry_id, {})
