@@ -53,6 +53,15 @@ LOCAL_RECONNECT_HEALTHY_THRESHOLD = (
     120.0  # seconds a session must survive to reset the stall streak
 )
 
+# Per-product platform sets. Products not listed here get DEFAULT_PLATFORMS
+# (the full set), so existing installs of unknown devices keep working.
+_ALL_PLATFORMS = frozenset({"fan", "light", "number", "select", "sensor", "switch"})
+DEFAULT_PLATFORMS = _ALL_PLATFORMS
+PRODUCT_PLATFORMS: dict[str, frozenset[str]] = {
+    "p11vkW": _ALL_PLATFORMS,  # OmniBreeze Tower Fan
+    "p11tiQ": frozenset({"sensor"}),  # IEETek SP5000 Power Station
+}
+
 # Power station telemetry — only create battery/power/runtime sensors for
 # products that actually report these codes.
 POWER_STATION_PRODUCTS = frozenset({"p11tiQ"})
