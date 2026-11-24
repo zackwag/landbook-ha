@@ -12,7 +12,13 @@ import pytest
 from custom_components.landbook.light import LandbookLight
 from custom_components.landbook.number import LandbookNumber
 from custom_components.landbook.select import LandbookCountdown, LandbookSelect, _countdown_label
-from custom_components.landbook.sensor import LandbookTemperatureSensor
+from custom_components.landbook.sensor import (
+    LandbookTelemetrySensor,
+    LandbookTemperatureSensor,
+)
+from custom_components.landbook.sensor import (
+    async_setup_entry as async_setup_sensor_entry,
+)
 from custom_components.landbook.switch import LandbookSwitch
 
 
@@ -207,6 +213,84 @@ class TestTemperatureSensor:
         sensor, data = self._make_sensor()
         data["online"] = False
         assert sensor.available is False
+
+
+# ---------------------------------------------------------------------------
+# Power station telemetry sensors
+# ---------------------------------------------------------------------------
+
+
+_TELEMETRY_CONFIG = {
+    "name": "Battery Level",
+    "unit": "%",
+    "device_class": "battery",
+}
+
+
+class TestTelemetrySensor:
+    def _make_sensor(self, state=None):
+        entry = _make_entry()
+        data = _make_data(state=state)
+        sensor = LandbookTelemetrySensor(entry, data, "battery_percentage", _TELEMETRY_CONFIG)
+        _patch_entity(sensor)
+        return sensor, data
+
+    def test_state_update_sets_value(self):
+        sensor, data = self._make_sensor()
+        data["state"]["battery_percentage"] = 84
+
+        sensor._handle_state_update(_event(["battery_percentage"]))
+
+        assert sensor._attr_native_value == 84.0
+        sensor.async_write_ha_state.assert_called_once()
+
+    def test_state_update_ignores_irrelevant_key(self):
+        sensor, data = self._make_sensor()
+        sensor._attr_native_value = 50.0
+        data["state"]["total_input_power"] = 120
+
+        sensor._handle_state_update(_event(["total_input_power"]))
+
+        assert sensor._attr_native_value == 50.0
+        sensor.async_write_ha_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_setup_registers_seven_telemetry_sensors(self):
+        hass = MagicMock()
+        data = _make_data()
+        hass.data = {"landbook": {"test_entry": data}}
+        add_entities = MagicMock()
+
+        await async_setup_sensor_entry(
+            hass, _make_entry(data={"product_key": "p11tiQ"}), add_entities
+        )
+
+        entities = add_entities.call_args.args[0]
+        telemetry = [entity for entity in entities if isinstance(entity, LandbookTelemetrySensor)]
+        assert len(telemetry) == 7
+        assert {entity._code for entity in telemetry} == {
+            "battery_percentage",
+            "total_input_power",
+            "total_output_power",
+            "ac_input",
+            "dc_input",
+            "remain_charging_time",
+            "remain_time",
+        }
+
+    @pytest.mark.asyncio
+    async def test_setup_skips_telemetry_for_non_power_station(self):
+        hass = MagicMock()
+        data = _make_data()
+        hass.data = {"landbook": {"test_entry": data}}
+        add_entities = MagicMock()
+
+        await async_setup_sensor_entry(hass, _make_entry(), add_entities)
+
+        if add_entities.call_args:
+            entities = add_entities.call_args.args[0]
+            telemetry = [e for e in entities if isinstance(e, LandbookTelemetrySensor)]
+            assert len(telemetry) == 0
 
 
 # ---------------------------------------------------------------------------

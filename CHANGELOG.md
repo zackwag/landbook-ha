@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/zackwag/landbook-ha/compare/v2.2.11...v2.3.0) (2026-11-24)
+
+
+### Features
+
+* Add IEETek SP5000 Portable Power Station device support ([#92](https://github.com/zackwag/landbook-ha/issues/92)) ([4f993e7](https://github.com/zackwag/landbook-ha/commit/4f993e7863ed322952a1ac7d736d794dfacecfd6))
+
 ## [2.2.11](https://github.com/zackwag/landbook-ha/compare/v2.2.10...v2.2.11) (2026-11-18)
 
 
