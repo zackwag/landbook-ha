@@ -27,7 +27,6 @@ Additional entities are created automatically for any other writable properties 
 | OmniBreeze Tower Fan with Internal Oscillation and Wi-Fi | DC2313R |
 | IEETek Portable Power Station | SP5000 |
 
-
 Other Landbook devices may work but have not been verified. If yours does, please open an issue or PR to add it to this list.
 
 ## Installation

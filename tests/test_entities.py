@@ -5,7 +5,7 @@ Covers light, switch, number, sensor, and select entities.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -252,13 +252,16 @@ class TestTelemetrySensor:
         assert sensor._attr_native_value == 50.0
         sensor.async_write_ha_state.assert_not_called()
 
-    def test_setup_registers_seven_telemetry_sensors(self):
+    @pytest.mark.asyncio
+    async def test_setup_registers_seven_telemetry_sensors(self):
         hass = MagicMock()
         data = _make_data()
         hass.data = {"landbook": {"test_entry": data}}
         add_entities = MagicMock()
 
-        async_setup_sensor_entry(hass, _make_entry(), add_entities)
+        await async_setup_sensor_entry(
+            hass, _make_entry(data={"product_key": "p11tiQ"}), add_entities
+        )
 
         entities = add_entities.call_args.args[0]
         telemetry = [entity for entity in entities if isinstance(entity, LandbookTelemetrySensor)]
@@ -272,6 +275,20 @@ class TestTelemetrySensor:
             "remain_charging_time",
             "remain_time",
         }
+
+    @pytest.mark.asyncio
+    async def test_setup_skips_telemetry_for_non_power_station(self):
+        hass = MagicMock()
+        data = _make_data()
+        hass.data = {"landbook": {"test_entry": data}}
+        add_entities = MagicMock()
+
+        await async_setup_sensor_entry(hass, _make_entry(), add_entities)
+
+        if add_entities.call_args:
+            entities = add_entities.call_args.args[0]
+            telemetry = [e for e in entities if isinstance(e, LandbookTelemetrySensor)]
+            assert len(telemetry) == 0
 
 
 # ---------------------------------------------------------------------------

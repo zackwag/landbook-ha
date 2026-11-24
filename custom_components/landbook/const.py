@@ -52,6 +52,11 @@ LOCAL_RECONNECT_MAX_STALL_DEMOTIONS = 3  # consecutive short-lived sessions befo
 LOCAL_RECONNECT_HEALTHY_THRESHOLD = (
     120.0  # seconds a session must survive to reset the stall streak
 )
+
+# Power station telemetry — only create battery/power/runtime sensors for
+# products that actually report these codes.
+POWER_STATION_PRODUCTS = frozenset({"p11tiQ"})
+
 MQTT_WATCHDOG_CHECK_INTERVAL = 30  # seconds between dead-link checks
 MQTT_WATCHDOG_STALE_INTERVAL = 300  # zero-inbound-MQTT time before forcing reconnect
 

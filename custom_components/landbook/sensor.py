@@ -24,10 +24,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import (
     CONF_DEVICE_NAME,
     CONF_FW_VERSION,
+    CONF_PRODUCT_KEY,
     CONF_PRODUCT_NAME,
     CONF_SIGNAL_STRENGTH,
     CONF_TEMP_UNIT,
     DOMAIN,
+    POWER_STATION_PRODUCTS,
     TEMP_UNIT_C,
     TEMP_UNIT_F,
 )
@@ -54,47 +56,48 @@ async def async_setup_entry(
     if signal_enabled:
         entities.append(LandbookSignalSensor(hass, entry, data))
 
-    telemetry = {
-        "battery_percentage": {
-            "name": "Battery Level",
-            "unit": PERCENTAGE,
-            "device_class": SensorDeviceClass.BATTERY,
-        },
-        "total_input_power": {
-            "name": "Total Input Power",
-            "unit": UnitOfPower.WATT,
-            "device_class": SensorDeviceClass.POWER,
-        },
-        "total_output_power": {
-            "name": "Total Output Power",
-            "unit": UnitOfPower.WATT,
-            "device_class": SensorDeviceClass.POWER,
-        },
-        "ac_input": {
-            "name": "AC Input Power",
-            "unit": UnitOfPower.WATT,
-            "device_class": SensorDeviceClass.POWER,
-        },
-        "dc_input": {
-            "name": "DC Input Power",
-            "unit": UnitOfPower.WATT,
-            "device_class": SensorDeviceClass.POWER,
-        },
-        "remain_charging_time": {
-            "name": "Remaining Charging Time",
-            "unit": UnitOfTime.SECONDS,
-            "device_class": SensorDeviceClass.DURATION,
-        },
-        "remain_time": {
-            "name": "Remaining Runtime",
-            "unit": UnitOfTime.SECONDS,
-            "device_class": SensorDeviceClass.DURATION,
-        },
-    }
-    entities.extend(
-        LandbookTelemetrySensor(entry, data, code, config)
-        for code, config in telemetry.items()
-    )
+    if entry.data.get(CONF_PRODUCT_KEY) in POWER_STATION_PRODUCTS:
+        telemetry = {
+            "battery_percentage": {
+                "name": "Battery Level",
+                "unit": PERCENTAGE,
+                "device_class": SensorDeviceClass.BATTERY,
+            },
+            "total_input_power": {
+                "name": "Total Input Power",
+                "unit": UnitOfPower.WATT,
+                "device_class": SensorDeviceClass.POWER,
+            },
+            "total_output_power": {
+                "name": "Total Output Power",
+                "unit": UnitOfPower.WATT,
+                "device_class": SensorDeviceClass.POWER,
+            },
+            "ac_input": {
+                "name": "AC Input Power",
+                "unit": UnitOfPower.WATT,
+                "device_class": SensorDeviceClass.POWER,
+            },
+            "dc_input": {
+                "name": "DC Input Power",
+                "unit": UnitOfPower.WATT,
+                "device_class": SensorDeviceClass.POWER,
+            },
+            "remain_charging_time": {
+                "name": "Remaining Charging Time",
+                "unit": UnitOfTime.SECONDS,
+                "device_class": SensorDeviceClass.DURATION,
+            },
+            "remain_time": {
+                "name": "Remaining Runtime",
+                "unit": UnitOfTime.SECONDS,
+                "device_class": SensorDeviceClass.DURATION,
+            },
+        }
+        entities.extend(
+            LandbookTelemetrySensor(entry, data, code, config)
+            for code, config in telemetry.items()
+        )
 
     if entities:
         async_add_entities(entities, update_before_add=False)
