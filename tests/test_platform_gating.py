@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from custom_components.landbook.const import DEFAULT_PLATFORMS, DOMAIN, PRODUCT_PLATFORMS
+from custom_components.landbook.const import DEFAULT_PLATFORMS, PRODUCT_PLATFORMS
 
 from .conftest import make_config_entry, make_hass, register_entry
 

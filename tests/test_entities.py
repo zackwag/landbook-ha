@@ -5,7 +5,7 @@ Covers light, switch, number, sensor, and select entities.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -15,6 +15,8 @@ from custom_components.landbook.select import LandbookCountdown, LandbookSelect,
 from custom_components.landbook.sensor import (
     LandbookTelemetrySensor,
     LandbookTemperatureSensor,
+)
+from custom_components.landbook.sensor import (
     async_setup_entry as async_setup_sensor_entry,
 )
 from custom_components.landbook.switch import LandbookSwitch
@@ -217,17 +219,18 @@ class TestTemperatureSensor:
 # ---------------------------------------------------------------------------
 
 
-class TestTelemetrySensor:
-    _CONFIG = {
-        "name": "Battery Level",
-        "unit": "%",
-        "device_class": "battery",
-    }
+_TELEMETRY_CONFIG = {
+    "name": "Battery Level",
+    "unit": "%",
+    "device_class": "battery",
+}
 
+
+class TestTelemetrySensor:
     def _make_sensor(self, state=None):
         entry = _make_entry()
         data = _make_data(state=state)
-        sensor = LandbookTelemetrySensor(entry, data, "battery_percentage", self._CONFIG)
+        sensor = LandbookTelemetrySensor(entry, data, "battery_percentage", _TELEMETRY_CONFIG)
         _patch_entity(sensor)
         return sensor, data
 
