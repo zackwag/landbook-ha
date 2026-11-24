@@ -287,6 +287,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     finally:
                         await hass.async_add_executor_job(mqtt_client.disconnect)
 
+                # async_create_task registers with HA's task tracker, keeping
+                # cleanup_task alive even if setup is cancelled a second time.
                 cleanup_task = hass.async_create_task(_cleanup_cancelled_connect())
                 await asyncio.shield(cleanup_task)
                 raise
@@ -831,7 +833,6 @@ def _make_local_disconnect_handler(
                 dk,
                 stall_streak,
             )
-
         else:
             _LOGGER.warning(
                 "Landbook: local connection to %s lost unexpectedly — "
