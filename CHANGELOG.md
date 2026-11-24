@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.3.1](https://github.com/zackwag/landbook-ha/compare/v2.3.0...v2.3.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* confirm local commands and keep recovery automatic ([#91](https://github.com/zackwag/landbook-ha/issues/91)) ([7bce0ab](https://github.com/zackwag/landbook-ha/commit/7bce0ab718dd027ceb5e94f39683c5ec56fbded2))
+
+
+### Miscellaneous Chores
+
+* clean up README for multi-device support and remove prep_release.sh ([#94](https://github.com/zackwag/landbook-ha/issues/94)) ([2337e42](https://github.com/zackwag/landbook-ha/commit/2337e42f223eeb1af4347f5ea8f83f213e412e4f))
+
 ## [2.3.0](https://github.com/zackwag/landbook-ha/compare/v2.2.11...v2.3.0) (2026-11-24)
 
 
