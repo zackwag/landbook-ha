@@ -7,7 +7,9 @@ A HACS custom integration for Landbook smart home devices, reverse-engineered fr
 
 ## Entities
 
-For each device the integration creates:
+Which entities appear depends on the device type. Additional entities are created automatically for any other writable properties discovered in the device's TSL model.
+
+### Tower Fan (OmniBreeze DC2313R)
 
 | Entity | Type | Description |
 |--------|------|-------------|
@@ -18,7 +20,17 @@ For each device the integration creates:
 | Mode | `select` | Operating mode (Normal / Natural / Sleep / Auto) |
 | Countdown | `select` | Sleep timer (Cancel / 1 h / 2 h / … / 12 h) |
 
-Additional entities are created automatically for any other writable properties discovered in the device's TSL model.
+### Portable Power Station (IEETek SP5000)
+
+| Entity | Type | Description |
+|--------|------|-------------|
+| Battery Level | `sensor` | Battery percentage |
+| Total Input Power | `sensor` | Combined input power (W) |
+| Total Output Power | `sensor` | Combined output power (W) |
+| AC Input Power | `sensor` | AC input power (W) |
+| DC Input Power | `sensor` | DC input power (W) |
+| Remaining Charging Time | `sensor` | Time until full charge |
+| Remaining Runtime | `sensor` | Estimated time until empty |
 
 ## Tested Devices
 
@@ -75,15 +87,20 @@ After setup, click **Configure** on the integration card to change:
 
 ## Notes
 
+### All devices
+
+- **State on startup** — the integration requests a full state read from the device on every connect and reconnect, so entities reflect actual device state after a restart even if the device was already on.
+- **Device availability** — all entities go unavailable if the device drops off the Landbook cloud (MQTT `onl_` event). They recover automatically when the device reconnects.
+- **Session expiry** — the access token (2-hour lifetime) is renewed automatically in the background using the account's refresh token, both proactively on a timer and whenever a reconnect or API call needs it. If the refresh token itself has expired or been revoked, Home Assistant will prompt you to re-enter your password from the integration card. No need to remove and re-add the device.
+- The integration auto-detects properties from the device's TSL model. If detection is wrong for your device, open an issue with a debug log.
+- One MQTT connection is maintained per account regardless of how many devices you add. All devices on the same account share a single connection — adding a second device does not open a second connection to the broker.
+
+### Tower Fan
+
 - **Fan speed in Auto mode** — speed shows as unknown while Auto is active. The device controls speed autonomously in this mode and does not push immediate updates, matching the behavior of the native Landbook app. Speed resumes showing when you switch back to another mode.
 - **Temperature** updates arrive when the device reports a state change — there is no fixed polling interval.
 - **Fan controls availability** — speed, mode, oscillation, countdown, sound, and display entities are marked unavailable while the fan is off, matching the behavior of the Landbook app. Temperature and signal strength remain available regardless of fan state.
 - **State on power-on** — the device resets speed, mode, and sound to defaults on every power cycle, regardless of what turned it on (HA, the app, or the physical button) or what settings were active before it was turned off. This happens on the Landbook cloud side, not in this integration, so there is no reliable way to restore previous settings after power-on — commands sent immediately after turn-on are overwritten by the reset. A previous "Restore state" option attempted to work around this by re-sending settings after a delay; it was removed because the cloud's reset is not consistently timed, so the workaround could not be made reliable.
-- **State on startup** — the integration requests a full state read from the device on every connect and reconnect, so entities reflect actual device state after a restart even if the device was already on.
-- **Device availability** — all entities go unavailable if the device drops off the Landbook cloud (MQTT `onl_` event). They recover automatically when the device reconnects.
-- **Session expiry** — the access token (2-hour lifetime) is renewed automatically in the background using the account's refresh token, both proactively on a timer and whenever a reconnect or API call needs it. If the refresh token itself has expired or been revoked, Home Assistant will prompt you to re-enter your password from the integration card. No need to remove and re-add the device.
-- The integration auto-detects power, speed, mode, and oscillation properties from the device's TSL model. If detection is wrong for your device, open an issue with a debug log.
-- One MQTT connection is maintained per account regardless of how many devices you add. All devices on the same account share a single connection — adding a second device does not open a second connection to the broker.
 
 ## Troubleshooting
 
@@ -104,10 +121,4 @@ logger:
 
 ## Releasing a New Version
 
-Use the release script:
-
-```bash
-./scripts/prep_release.sh "Your commit message here"
-```
-
-The script will prompt for patch / minor / major, show the resulting version, ask for confirmation, then commit, tag, and push. The GitHub Actions release workflow picks up the tag and publishes a GitHub Release automatically. HACS notifies users once the release is live.
+Releases are managed by [release-please](https://github.com/googleapis/release-please). Merging to `main` with Conventional Commit messages automatically opens a release PR that bumps the version, updates the changelog, and — once merged — tags the release. The GitHub Actions workflow publishes a GitHub Release from the tag, and HACS notifies users once it is live.
