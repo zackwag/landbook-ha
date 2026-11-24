@@ -95,8 +95,7 @@ async def async_setup_entry(
             },
         }
         entities.extend(
-            LandbookTelemetrySensor(entry, data, code, config)
-            for code, config in telemetry.items()
+            LandbookTelemetrySensor(entry, data, code, config) for code, config in telemetry.items()
         )
 
     if entities:

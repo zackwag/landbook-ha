@@ -227,9 +227,7 @@ class TestTelemetrySensor:
     def _make_sensor(self, state=None):
         entry = _make_entry()
         data = _make_data(state=state)
-        sensor = LandbookTelemetrySensor(
-            entry, data, "battery_percentage", self._CONFIG
-        )
+        sensor = LandbookTelemetrySensor(entry, data, "battery_percentage", self._CONFIG)
         _patch_entity(sensor)
         return sensor, data
 
